@@ -1,0 +1,64 @@
+# ViT-B/16 — owner: C
+# Includes frequency-hybrid variant and cross-generator eval settings.
+# Same config contract as custom_cnn.yaml.
+
+# ---- runtime ----
+seed: 42
+deterministic: true
+device: auto
+
+# ---- data (variables, resolved by src.utils.load_config) ----
+data:
+  root: "data/raw"
+  processed_dir: "data/processed"
+  cross_gen_test_dir: "data/cross_gen_test"
+  train_split: 0.80
+  val_split: 0.10
+  test_split: 0.10
+  balance_classes: true
+  face_crop: true
+  augment: true
+  num_workers: 4
+
+# ---- image ----
+image:
+  size: 224                     # ViT-B/16 native patch grid (14x14)
+  normalize: imagenet
+
+# ---- model ----
+model:
+  name: ViT_B_16
+  variant: "vit_base_patch16_224"    # timm tag
+  weights: "imagenet"
+  use_frequency_hybrid: false        # true = add HiFi/dct branch (owner C experiment)
+  patch_size: 16
+  num_classes: 2
+  drop_rate: 0.1
+  attn_drop_rate: 0.0
+
+# ---- training ----
+training:
+  learning_rate: 5.0e-5         # ViTs need longer warmup + lower LR
+  scheduler: cosine
+  warmup_epochs: 5
+  weight_decay: 0.05
+  batch_size: 16
+  epochs: 30
+  mixed_precision: auto
+  early_stopping_patience: 8
+
+# ---- cross-generator evaluation (owner C) ----
+crossgen:
+  eval_on: ["StyleGAN3", "ProGAN", "latent-diffusion"]   # unseen-generator subsets
+  per_generator_metrics: true
+  output_dir: "results/comparison"     # ONLY owner-C comparison tables/plots land here
+  save_confusion: true
+  save_roc: true
+
+# ---- logging / output ----
+logging:
+  run_name: "vit_v1"
+  output_dir: "results/vit"
+  save_checkpoint_last: true
+  save_best: true
+  log_interval: 20

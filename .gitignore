@@ -1,0 +1,69 @@
+# ============================================================
+# Deepfake Cross-Generator Detection — root .gitignore
+# Rules: keep .gitkeep placeholders tracked, exclude everything
+# binary / large / regenerable.
+# ============================================================
+
+# ---------- Data (never commit raw/processed/test sets) ------
+# Ignore directory CONTENTS but keep the folder + .gitkeep placeholders
+# so the layout survives a fresh clone.
+data/raw/*
+data/processed/*
+data/cross_gen_test/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/cross_gen_test/.gitkeep
+
+# ---------- Results / generated artifacts --------------------
+# Folder structure is tracked via .gitkeep; contents excluded.
+results/**/*.png
+results/**/*.jpg
+results/**/*.jpeg
+results/**/*.csv
+results/**/*.json
+results/**/*.pdf
+results/**/*.txt
+
+# ---------- Model checkpoints / weights ----------------------
+*.h5
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+*.pkl
+*.joblib
+checkpoints/
+trained_models/
+
+# ---------- Python bytecode / caches -------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ---------- Notebook cruft -----------------------------------
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+# Uncomment to also force-strip notebook outputs at commit time
+# (store as a filter, not as a tracked blob). See README Working rules.
+
+# ---------- Environments / tooling ---------------------------
+.venv/
+venv/
+env/
+ENV/
+.conda/
+
+# ---------- OS / editor --------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ---------- Ignore everything in results (defense in depth) --
+# Optional: uncomment the next line only if you want results/ fully ignored.
+# results/

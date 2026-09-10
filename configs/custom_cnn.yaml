@@ -1,0 +1,52 @@
+# Custom CNN — owner: A
+# All paths are variables (yaml anchors / ${ENV}) so local machines never clash.
+# Copy to a personal overrides file if needed: configs/dev_custom_cnn.yaml
+
+# ---- runtime ----
+seed: 42
+deterministic: true
+device: auto            # auto | cpu | cuda | mps
+
+# ---- data (variables, resolved by src.utils.load_config) ----
+data:
+  root: "data/raw"              # <-- override locally, never hardcode in scripts
+  processed_dir: "data/processed"
+  cross_gen_test_dir: "data/cross_gen_test"
+  train_split: 0.80
+  val_split: 0.10
+  test_split: 0.10
+  balance_classes: true
+  face_crop: true               # use src.data_pipeline.crop_and_align
+  augment: true                 # flip, rotate, color-jitter
+  num_workers: 4
+
+# ---- image ----
+image:
+  size: 128                     # squared input for conv net
+  normalize: imagenet           # none | imagenet | cifar-style
+
+# ---- model ----
+model:
+  name: CustomCNN
+  base_channels: 32
+  num_blocks: 4
+  dropout: 0.30
+  num_classes: 2                # real / fake
+
+# ---- training ----
+training:
+  learning_rate: 3.0e-4
+  scheduler: cosine             # cosine | step | none
+  weight_decay: 5.0e-4
+  batch_size: 64
+  epochs: 80
+  mixed_precision: auto
+  early_stopping_patience: 10
+
+# ---- logging / output ----
+logging:
+  run_name: "custom_cnn_v1"
+  output_dir: "results/custom_cnn"     # outputs go to per-model subfolder only
+  save_checkpoint_last: true
+  save_best: true
+  log_interval: 20
