@@ -1,64 +1,52 @@
-# ViT-B/16 — owner: C
-# Includes frequency-hybrid variant and cross-generator eval settings.
-# Same config contract as custom_cnn.yaml.
+# ==============================================================================
+# Config for Model 4: ViT-B/16 (+ optional frequency-hybrid branch)
+# Owner: Member C
+#
+# Rule: never hardcode paths / lr / batch size / seed in vit train.py or model.py.
+# Everything tunable lives here. Give every experiment a new run_name.
+# ==============================================================================
 
-# ---- runtime ----
-seed: 42
-deterministic: true
-device: auto
+run_name: "vit_b16_baseline_v1"     # change per experiment, never overwrite an old run
+seed: 42                            # keep identical across all 4 models for fair comparison
 
-# ---- data (variables, resolved by src.utils.load_config) ----
 data:
-  root: "data/raw"
-  processed_dir: "data/processed"
-  cross_gen_test_dir: "data/cross_gen_test"
-  train_split: 0.80
-  val_split: 0.10
-  test_split: 0.10
-  balance_classes: true
-  face_crop: true
-  augment: true
+  train_dir: "data/processed/train"
+  val_dir: "data/processed/val"
+  test_dir: "data/processed/test"                 # in-distribution (same generator family)
+  cross_gen_test_dir: "data/cross_gen_test"        # unseen generator family, touched once
+  image_size: 224                                  # 384 if using a 384-checkpoint
+  batch_size: 32
   num_workers: 4
 
-# ---- image ----
-image:
-  size: 224                     # ViT-B/16 native patch grid (14x14)
-  normalize: imagenet
-
-# ---- model ----
 model:
-  name: ViT_B_16
-  variant: "vit_base_patch16_224"    # timm tag
-  weights: "imagenet"
-  use_frequency_hybrid: false        # true = add HiFi/dct branch (owner C experiment)
-  patch_size: 16
-  num_classes: 2
-  drop_rate: 0.1
-  attn_drop_rate: 0.0
+  backbone: "vit_base_patch16_224"    # timm checkpoint name (ImageNet-21k pretrained)
+  pretrained: true
+  num_classes: 1                      # single sigmoid logit (real=0, fake=1)
+  dropout: 0.1
+  use_frequency_hybrid: false         # flip true to enable the FFT branch (novelty add-on)
+  freq_branch:
+    fft_size: 224                     # matches image_size
+    conv_channels: [16, 32, 64]
+    fusion_dim: 128                   # size of fused feature vector concatenated w/ ViT CLS token
 
-# ---- training ----
-training:
-  learning_rate: 5.0e-5         # ViTs need longer warmup + lower LR
-  scheduler: cosine
-  warmup_epochs: 5
-  weight_decay: 0.05
-  batch_size: 16
-  epochs: 30
-  mixed_precision: auto
-  early_stopping_patience: 8
+train:
+  epochs: 20
+  optimizer: "adamw"
+  lr: 3.0e-5                          # ViTs are LR-sensitive: keep small (2e-5 to 5e-5)
+  weight_decay: 0.01
+  warmup_steps_pct: 0.1               # % of total steps used for linear warmup
+  scheduler: "linear_decay"
+  early_stopping_patience: 4
+  monitor_metric: "val_loss"
+  grad_clip_norm: 1.0
+  mixed_precision: true
 
-# ---- cross-generator evaluation (owner C) ----
-crossgen:
-  eval_on: ["StyleGAN3", "ProGAN", "latent-diffusion"]   # unseen-generator subsets
-  per_generator_metrics: true
-  output_dir: "results/comparison"     # ONLY owner-C comparison tables/plots land here
-  save_confusion: true
-  save_roc: true
+evaluation:
+  threshold: 0.5
+  save_confusion_matrix: true
+  save_roc_curve: true
 
-# ---- logging / output ----
-logging:
-  run_name: "vit_v1"
-  output_dir: "results/vit"
-  save_checkpoint_last: true
-  save_best: true
-  log_interval: 20
+output:
+  results_dir: "results/vit"
+  checkpoint_dir: "results/vit/{run_name}/checkpoints"
+  comparison_dir: "results/comparison"        # shared folder — Member C is the only writer
