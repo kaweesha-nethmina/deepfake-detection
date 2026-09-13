@@ -1,5 +1,5 @@
 # ==============================================================================
-# EXPERIMENT A — ViT-B/16 (no frequency branch)
+# EXPERIMENT B — ViT-B/16 + Frequency-Hybrid branch
 # Owner: Member C
 #
 # Paired with configs/vit_freq_hybrid.yaml (EXPERIMENT B). Both configs must
@@ -15,7 +15,7 @@
 # Everything tunable lives here.
 # ==============================================================================
 
-run_name: "vit_b16_baseline_v1"     # EXPERIMENT A — do not overwrite; use a new run_name per attempt
+run_name: "vit_b16_freq_hybrid_v1"    # EXPERIMENT B — same everything else as configs/vit.yaml
 seed: 42                            # keep identical across all 4 models for fair comparison
 
 data:
@@ -32,7 +32,7 @@ model:
   pretrained: true
   num_classes: 1                      # single sigmoid logit (real=0, fake=1)
   dropout: 0.1
-  use_frequency_hybrid: false         # flip true to enable the FFT branch (novelty add-on)
+  use_frequency_hybrid: true         # flip true to enable the FFT branch (novelty add-on)
   freq_branch:
     fft_size: 224                     # matches image_size
     conv_channels: [16, 32, 64]

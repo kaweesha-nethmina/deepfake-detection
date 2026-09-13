@@ -28,13 +28,12 @@ models:
     config: "configs/efficientnetv2.yaml"
     checkpoint: "results/efficientnetv2/efficientnetv2_v1/checkpoints/best_model.pt"
 
-  vit_b16:
+  vit_b16:                                        # Experiment A
     module: "models.vit.model"
     config: "configs/vit.yaml"
     checkpoint: "results/vit/vit_b16_baseline_v1/checkpoints/best_model.pt"
 
-  # Optional — add once the frequency-hybrid ablation run exists.
-  # vit_freq_hybrid:
-  #   module: "models.vit.model"
-  #   config: "configs/vit_freq_hybrid.yaml"
-  #   checkpoint: "results/vit/vit_b16_freq_hybrid_v1/checkpoints/best_model.pt"
+  vit_freq_hybrid:                                # Experiment B
+    module: "models.vit.model"
+    config: "configs/vit_freq_hybrid.yaml"
+    checkpoint: "results/vit/vit_b16_freq_hybrid_v1/checkpoints/best_model.pt"

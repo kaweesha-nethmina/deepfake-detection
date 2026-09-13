@@ -1,154 +1,117 @@
-Model 4 — ViT-B/16 (+ Frequency-Hybrid) — Owner: Member C
+# Model 4 — ViT-B/16 (+ Frequency-Hybrid) & Cross-Generator Harness — Owner: Member C
 
-What's in this folder
+Implements the strict experimental protocol: train/select on **StyleGAN** only,
+evaluate once on the **StyleGAN primary test set**, then — without touching the
+model again — evaluate on **Stable Diffusion** (never seen before). Label
+convention throughout: **REAL = 0, FAKE = 1** (fake is the positive class).
 
+## Pipeline order
 
+```bash
+# 1) Classify the raw download, split StyleGAN 70/15/15, hold out Stable Diffusion,
+#    run leakage checks, and write the dataset summary table.
+python models/vit/prepare_data.py -c configs/dataset_prep.yaml
 
-
-
-
-
-File
-
-
-
-Purpose
-
-
-
-
-
-model.py
-
-
-
-ViTDeepfakeDetector — pretrained ViT-B/16 backbone (via timm) with a binary classification head. Optionally fuses a FrequencyBranch (2D FFT → small CNN) before the final layer.
-
-
-
-
-
-train.py
-
-
-
-Trains the model, evaluates on the primary (in-distribution) test set once, then runs the cross-generator evaluation and writes the shared comparison row.
-
-
-
-
-
-README.md
-
-
-
-This file.
-
-Config for this model lives in configs/vit.yaml — never hardcode paths, LR,
-batch size, or seed here; change the config instead.
-
-Architecture summary
-
-
-
-
-
-Backbone: ViT-B/16, patch size 16×16, pretrained on ImageNet-21k, loaded via timm.create_model(..., num_classes=0) so it returns pooled features.
-
-
-
-Head: Dropout -> Linear(1) producing a single logit (sigmoid → real/fake probability).
-
-
-
-Frequency-hybrid branch (novelty add-on, toggle via model.use_frequency_hybrid):
-log-magnitude 2D FFT of the input image → 3 conv blocks → global average pool →
-linear projection to fusion_dim. This vector is concatenated with the ViT's
-pooled features before the classifier. Rationale: GAN/diffusion upsampling
-artifacts often show up more clearly in the frequency domain than in raw pixels.
-
-
-
-Fine-tuning: small LR (2e-5–5e-5), linear warmup + linear decay, since ViTs
-are more LR-sensitive than CNNs (see configs/vit.yaml → train:).
-
-
-
-How to run
-
-# from the repo root
+# 2) Experiment A — ViT-B/16, no frequency branch
 python models/vit/train.py -c configs/vit.yaml
 
-To run the frequency-hybrid ablation, duplicate the config with a new
-run_name and flip the flag:
-
-cp configs/vit.yaml configs/vit_freq_hybrid.yaml
-# edit vit_freq_hybrid.yaml: run_name -> "vit_b16_freq_hybrid_v1",
-#                             model.use_frequency_hybrid -> true
+# 3) Experiment B — ViT-B/16 + frequency-hybrid branch (identical config otherwise)
 python models/vit/train.py -c configs/vit_freq_hybrid.yaml
 
+# 4) Score all 4 team models (+ both my experiments) with identical evaluation code
+python models/vit/evaluate_crossgen.py -c configs/crossgen_harness.yaml
 
+# 5) Build the report figures
+jupyter notebook notebooks/04_vit_crossgen_evaluation.ipynb
+```
 
-Outputs
+## Files
 
-Everything is written under results/vit/<run_name>/:
+| File | Purpose |
+|---|---|
+| `prepare_data.py` | Scans the raw Kaggle download, classifies every file as real/fake + generator, reserves real images for the cross-gen test **before** splitting (zero leakage by construction), stratified-splits the StyleGAN pool 70/15/15, runs leakage checks, materializes `data/processed/{train,val,test}` and `data/cross_gen_test`, writes the dataset verification + leakage reports and the summary table. |
+| `common.py` | `set_seed`, `load_config`, `build_dataset_paths`, `DeepfakeImageDataset`, augmentation transforms. Tries the shared `src/` module first, falls back to a local implementation. Only imports torch lazily where actually needed, so `prepare_data.py` runs even without a working torch install. |
+| `model.py` | `ViTDeepfakeDetector` — ViT-B/16 (`timm`) + optional `FrequencyBranch` (2D FFT → small CNN), toggled by `model.use_frequency_hybrid`. |
+| `train.py` | Trains, selects on val, evaluates primary test once, then cross-gen once (no model changes in between). Writes `metrics.csv` (incl. `accuracy_drop` and `relative_accuracy_drop_pct`) and the shared comparison row. |
+| `evaluate_crossgen.py` | The **cross-generator evaluation harness** — identical evaluation code scores any teammate's checkpoint, so the 4-model comparison isn't confounded by inconsistent eval code. |
+| `README.md` | This file. |
 
+## Dataset protocol (`configs/dataset_prep.yaml`)
 
+- **Training generator**: StyleGAN. **Cross-generator**: Stable Diffusion.
+- StyleGAN pool (real + StyleGAN-fake) → stratified 70/15/15 → train/val/primary-test.
+- Real images needed for the Stable Diffusion cross-gen test (so it has both
+  classes to score) are reserved **before** the StyleGAN split, from a
+  disjoint random subset — this is what guarantees zero leakage rather than
+  relying on a check to catch it after the fact.
+- Stable Diffusion images never enter training, validation, tuning, threshold
+  selection, or architecture/model selection — only the final cross-gen eval.
+- **Nothing is hardcoded**: `label_rules` / `generator_rules` in the config
+  are keyword matches against the actual downloaded file paths, and every
+  count in the verification report and summary table is measured, not
+  assumed. **Verify the keywords match your actual folder names after
+  downloading** — the exact Kaggle layout wasn't independently confirmed
+  when this was written. The script prints any file it can't classify so
+  nothing is silently dropped.
+- Supplementary/"other" fake images (matching neither keyword set) are
+  excluded from both pools by default, per the protocol's instruction not to
+  mix in supplementary datasets without explicit configuration.
 
+**Tested**: `prepare_data.py` was run end-to-end against a synthetic dataset
+with this same folder shape (`real/<source>/*.jpg`, `fake/stylegan/*.jpg`,
+`fake/stable_diffusion/*.jpg`) to confirm the split, leakage detection, and
+file materialization all produce consistent, matching counts.
 
+### Leakage checks
 
-checkpoints/best_model.pt — best checkpoint by validation loss
+Reported (never silently fixed) in `results/vit/dataset_leakage_report.json`:
+unique paths per split, duplicate filenames within a split, and content-hash
+overlap between every pair of {train, val, test, cross_gen} — this also
+directly verifies requirements 4–9 from the protocol (no train/val/test
+overlap, and Stable Diffusion absent from train/val/test).
 
+### Dataset summary table
 
+`results/comparison/dataset_summary_table.csv` — `Dataset | Generator | Role | Real | Fake | Usage`,
+built from measured counts only.
 
-training_history.csv — per-epoch train/val loss and val metrics
+## Two experiments (fair ablation)
 
+| | Experiment A | Experiment B |
+|---|---|---|
+| Config | `configs/vit.yaml` | `configs/vit_freq_hybrid.yaml` |
+| `run_name` | `vit_b16_baseline_v1` | `vit_b16_freq_hybrid_v1` |
+| `model.use_frequency_hybrid` | `false` | `true` |
+| Everything else | identical | identical |
 
+Both use the same StyleGAN train/val/test split, the same Stable Diffusion
+cross-gen set, the same seed, the same threshold, and the same evaluation
+code — so the only thing that can explain a difference in results is the
+frequency-hybrid branch itself.
 
-metrics.csv — one row: val/test/cross-gen accuracy, precision, recall, F1,
-ROC-AUC, accuracy drop, train time, inference time/image, parameter count
-(same schema the other 3 models write, so notebook 04 can merge them)
+## Metrics (per model, in `metrics.csv` / the harness's `final_comparison_table.csv`)
 
+- Accuracy, precision, recall, F1, ROC-AUC — on both the primary test set and
+  the cross-generator test set.
+- `accuracy_drop = test_acc - cross_gen_acc`
+- `relative_accuracy_drop_pct = accuracy_drop / test_acc * 100`
+- Training time, inference time/image, parameter count.
 
+**Per the protocol: the highest primary-test accuracy does not automatically
+mean the best model** — the research question is generalization, so
+`accuracy_drop` / `relative_accuracy_drop_pct` are the numbers to lead with
+in the report's critical analysis, not raw primary accuracy.
 
-roc_primary_test.csv, roc_cross_gen.csv — ROC curve points
+## Dependencies
 
+Add to the shared `requirements.txt` if not already there: `torch`,
+`torchvision`, `timm`, `scikit-learn`, `pandas`, `numpy`, `pyyaml`, `pillow`,
+`matplotlib`, `seaborn`.
 
+## Notebook
 
-confusion_matrix_primary_test.csv, confusion_matrix_cross_gen.csv
-
-
-
-run_config_used.json — exact config snapshot for reproducibility
-
-Shared file (this folder is the only writer):
-results/comparison/crossgen_<run_name>.csv — the row this run contributes
-to the final 4-model comparison. Each of my runs writes its own file here;
-I never hand-edit another model's row.
-
-Cross-generator evaluation harness
-
-train.py evaluates on two held-out sets, in this order, each touched exactly once:
-
-
-
-
-
-Primary test set (data/test/) — same generator family as training.
-
-
-
-Cross-generator test set (data/cross_gen_test/) — a different generator
-
-family, never seen during training or hyperparameter tuning.
-
-The headline number is accuracy_drop = test_acc - cross_gen_acc per model —
-this is what notebook 04 charts across all 4 architectures.
-
-Notebook
-
-notebooks/04_vit_crossgen_evaluation.ipynb builds the final all-model
-comparison: it reads my metrics.csv plus the other members' metrics.csv
-files read-only (I don't edit their folders) and produces the report-ready
-tables, ROC overlays, confusion matrix grids, and the accuracy-drop /
-efficiency comparison charts.
+`notebooks/04_vit_crossgen_evaluation.ipynb` reads the dataset summary table,
+my `metrics.csv`, and the other members' `metrics.csv` files (read-only), and
+builds: the dataset summary, the final comparison table, absolute and
+relative accuracy-drop charts, ROC overlays, confusion matrix grids,
+efficiency-vs-accuracy, and the Experiment A vs. B ablation comparison.
