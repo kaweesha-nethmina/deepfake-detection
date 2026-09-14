@@ -1,52 +1,25 @@
-# ResNet50 — owner: B
-# Pretrained ImageNet backbone. Same config contract as custom_cnn.yaml.
-
-# ---- runtime ----
+model_name: resnet50
 seed: 42
-deterministic: true
-device: auto
 
-# ---- data (variables, resolved by src.utils.load_config) ----
 data:
-  root: "data/raw"
-  processed_dir: "data/processed"
-  cross_gen_test_dir: "data/cross_gen_test"
-  train_split: 0.80
-  val_split: 0.10
-  test_split: 0.10
-  balance_classes: true
-  face_crop: true
-  augment: true
+  train_dir: data/processed/train
+  val_dir: data/processed/val
+  test_dir: data/processed/test
+  cross_gen_dir: data/cross_gen_test
+  image_size: 224
+  batch_size: 32
   num_workers: 4
 
-# ---- image ----
-image:
-  size: 224                     # ResNet50 native input size
-  normalize: imagenet
+train:
+  warmup_epochs: 8
+  warmup_lr: 0.001
+  finetune_epochs: 15
+  finetune_lr: 0.00001
+  unfreeze_last_n_blocks: 2
+  weight_decay: 0.0001
+  early_stopping_patience: 6
+  optimizer: adam
 
-# ---- model ----
-model:
-  name: ResNet50
-  weights: "IMAGENET1K_V1"      # torchvision pretrained tag (or timm: "resnet50.a1_in1k")
-  freeze_backbone: false        # false = full fine-tune
-  unfreeze_from_layer: null     # e.g. 5 for progressive unfreezing (layer4..)
-  num_classes: 2
-  drop_rate: 0.1
-
-# ---- training ----
-training:
-  learning_rate: 1.0e-4         # lower LR for full fine-tune of pretrained
-  scheduler: cosine
-  weight_decay: 1.0e-4
-  batch_size: 32
-  epochs: 35
-  mixed_precision: auto
-  early_stopping_patience: 8
-
-# ---- logging / output ----
-logging:
-  run_name: "resnet50_v1"
-  output_dir: "results/resnet50"
-  save_checkpoint_last: true
-  save_best: true
-  log_interval: 20
+output:
+  results_dir: results/resnet50
+  checkpoint_path: results/resnet50/best_model.pt
