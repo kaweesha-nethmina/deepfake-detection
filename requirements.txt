@@ -10,7 +10,7 @@ timm>=1.0.7
 transformers>=4.40.2
 
 # --- Data / numerical ---
-numpy>=2.1.0
+numpy>=1.26.4
 pandas>=2.2.3
 PyYAML>=6.0.2        # config loading (src.utils.load_config)
 
