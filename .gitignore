@@ -50,6 +50,8 @@ __pycache__/
 
 # ---------- Environments / tooling ---------------------------
 .venv/
+.venv311/
+
 venv/
 env/
 ENV/
