@@ -1,73 +1,41 @@
-"""EfficientNetV2 — owner: B.
-
-Defines the architecture on top of timm's `efficientnetv2_*` zoo.
-Run with:
-
-    python models/efficientnetv2/train.py -c configs/efficientnetv2.yaml
-
-Outputs land in `results/efficientnetv2/`.
 """
-
-from __future__ import annotations
-
-import torch
-from torch import nn
-
-
-class EfficientNetV2Classifier(nn.Module):
-    """timm EfficientNetV2 backbone + tunable classification head."""
-
-    def __init__(
-        self,
-        num_classes: int = 2,
-        variant: str = "efficientnetv2_s",
-        weights: str | bool = "imagenet",
-        freeze_backbone: bool = False,
-        drop_rate: float = 0.2,
-    ) -> None:
-        super().__init__()
-        try:
-            import timm
-        except ImportError as exc:  # pragma: no cover
-            raise ImportError("timm is required for EfficientNetV2.") from exc
-
-        self.backbone = timm.create_model(
-            variant,
-            pretrained=bool(weights),
-            num_classes=0,          # drop the default classifier head
-            drop_rate=drop_rate,    # stochastic depth/classifier dropout applied by timm
-        )
-        in_features = self.backbone.num_features
-        self.head = nn.Sequential(
-            nn.Dropout(p=drop_rate),
-            nn.Linear(in_features, 256),
-            nn.ReLU(inplace=True),
-            nn.Dropout(p=drop_rate * 0.5),
-            nn.Linear(256, num_classes),
-        )
-        self.depth = getattr(self.backbone, "depth", 4)
-
-        if freeze_backbone:
-            for p in self.backbone.parameters():
-                p.requires_grad = False
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        feats = self.backbone(x)      # (B, num_features) — global pooled
-        return self.head(feats)
+Model 3: EfficientNetV2-S, transfer learning from ImageNet weights.
+Same two-phase strategy as ResNet50 (warmup then fine-tune), so the two
+transfer-learning models are directly comparable under identical rules.
+"""
+import torch.nn as nn
+from torchvision.models import efficientnet_v2_s, EfficientNet_V2_S_Weights
 
 
-def build_model(cfg: dict) -> nn.Module:
-    m = cfg.get("model", {})
-    return EfficientNetV2Classifier(
-        num_classes=m.get("num_classes", 2),
-        variant=m.get("variant", "efficientnetv2_s"),
-        weights=m.get("weights", "imagenet"),
-        freeze_backbone=m.get("freeze_backbone", False),
-        drop_rate=m.get("drop_rate", 0.2),
+def get_model(num_classes: int = 2) -> nn.Module:
+    model = efficientnet_v2_s(weights=EfficientNet_V2_S_Weights.IMAGENET1K_V1)
+    in_features = model.classifier[1].in_features
+    model.classifier = nn.Sequential(
+        nn.Dropout(0.4),
+        nn.Linear(in_features, 256),
+        nn.ReLU(inplace=True),
+        nn.Dropout(0.4),
+        nn.Linear(256, num_classes),
     )
+    return model
 
 
-if __name__ == "__main__":
-    dummy = torch.randn(2, 3, 224, 224)
-    net = build_model({"model": {"variant": "efficientnetv2_s"}})
-    print("out:", net(dummy).shape)
+def freeze_backbone(model: nn.Module):
+    for name, param in model.named_parameters():
+        if not name.startswith("classifier."):
+            param.requires_grad = False
+
+
+def unfreeze_last_blocks(model: nn.Module, n_blocks: int = 2):
+    """Unfreezes the last `n_blocks` feature stages plus the classifier head."""
+    total_stages = len(model.features)
+    unfreeze_stage_indices = set(range(total_stages - n_blocks, total_stages))
+
+    for name, param in model.named_parameters():
+        if name.startswith("classifier."):
+            param.requires_grad = True
+            continue
+        if name.startswith("features."):
+            stage_idx = int(name.split(".")[1])
+            if stage_idx in unfreeze_stage_indices:
+                param.requires_grad = True

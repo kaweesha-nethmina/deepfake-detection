@@ -1,116 +1,66 @@
-"""Shared binary-classification evaluation metrics.
-
-API is additive-only. These are thin, dependency-light wrappers so every model
-script reports results identically (henece comparable across generators/models).
-
-Usage::
-
-    from src import evaluate_binary
-    report = evaluate_binary(y_true, y_score)
 """
-
-from __future__ import annotations
-
-from dataclasses import dataclass, asdict
-
+Shared evaluation utilities so every model is scored the exact same way.
+Rule for the team: only ADD new metric functions here, don't change
+what an existing one returns.
+"""
+import time
 import numpy as np
-import pandas as pd
+import torch
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score,
+    roc_auc_score, confusion_matrix, roc_curve
+)
 
 
-@dataclass
-class BinaryReport:
-    """Container summarising a single binary-evaluation run."""
+@torch.no_grad()
+def get_predictions(model, dataloader, device):
+    """Runs the model over a dataloader and returns true labels,
+    predicted labels (threshold 0.5), and predicted probabilities."""
+    model.eval()
+    all_labels, all_probs = [], []
+    start = time.time()
+    n_images = 0
+    for images, labels in dataloader:
+        images = images.to(device)
+        logits = model(images)
+        probs = torch.softmax(logits, dim=1)[:, 1]  # probability of "fake"
+        all_probs.extend(probs.cpu().numpy().tolist())
+        all_labels.extend(labels.numpy().tolist())
+        n_images += images.size(0)
+    elapsed = time.time() - start
+    ms_per_image = (elapsed / max(n_images, 1)) * 1000
 
-    accuracy: float
-    precision: float
-    recall: float
-    f1: float
-    roc_auc: float
-    n: int
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-
-def _copy(y) -> np.ndarray:
-    return np.asarray(y, dtype=np.float64)
-
-
-def accuracy(y_true, y_pred) -> float:
-    y_true = _copy(y_true)
-    y_pred = _copy(y_pred) >= 0.5
-    return float((y_true == y_pred).mean()) if len(y_true) else float("nan")
-
-
-def precision_recall(y_true, y_pred) -> tuple[float, float]:
-    y_true = _copy(y_true)
-    y_pred = _copy(y_pred) >= 0.5
-    tp = float((y_pred & (y_true == 1)).sum())
-    fp = float((y_pred & (y_true == 0)).sum())
-    fn = float(((~y_pred) & (y_true == 1)).sum())
-    precision = tp / (tp + fp) if (tp + fp) else float("nan")
-    recall = tp / (tp + fn) if (tp + fn) else float("nan")
-    return precision, recall
+    y_true = np.array(all_labels)
+    y_prob = np.array(all_probs)
+    y_pred = (y_prob >= 0.5).astype(int)
+    return y_true, y_pred, y_prob, ms_per_image
 
 
-def f1_score_binary(y_true, y_pred) -> float:
-    precision, recall = precision_recall(y_true, y_pred)
-    if (precision + recall) == 0:
-        return float("nan")
-    return float(2 * precision * recall / (precision + recall))
+def compute_all_metrics(y_true, y_pred, y_prob) -> dict:
+    """Returns the full metric set required by the assignment's
+    classification evaluation criteria."""
+    return {
+        "accuracy": accuracy_score(y_true, y_pred),
+        "precision": precision_score(y_true, y_pred, zero_division=0),
+        "recall": recall_score(y_true, y_pred, zero_division=0),
+        "f1_score": f1_score(y_true, y_pred, zero_division=0),
+        "roc_auc": roc_auc_score(y_true, y_prob) if len(set(y_true)) > 1 else float("nan"),
+        "confusion_matrix": confusion_matrix(y_true, y_pred).tolist(),
+    }
 
 
-def roc_auc(y_true, y_score) -> float:
-    """ROC-AUC from scores, using the Mann-Whitney U estimator (base numpy)."""
-    y_true = _copy(y_true)
-    y_score = _copy(y_score)
-    order = np.argsort(y_score, kind="mergesort")
-    sorted_y = y_true[order]
-    n_pos = int(sorted_y.sum())
-    n_neg = len(sorted_y) - n_pos
-    if n_pos == 0 or n_neg == 0:
-        return float("nan")
-    ranks = np.arange(1, len(sorted_y) + 1)
-    ties = np.flatnonzero(np.diff(y_score[order]) == 0)
-    if len(ties):
-        # average ranks inside each tie group
-        group = np.split(ranks, ties + 1)
-        group = [g for g in group if len(g)]
-        for i, g in enumerate(group):
-            ranks[g[0] : g[-1] + 1] = g.mean()  # noqa
-    auc = (ranks[sorted_y == 1].sum() - n_pos * (n_pos + 1) / 2) / (
-        n_pos * n_neg
-    )
-    return float(auc)
+def get_roc_curve(y_true, y_prob):
+    fpr, tpr, _ = roc_curve(y_true, y_prob)
+    return fpr, tpr
 
 
-def confusion_matrix_df(y_true, y_pred, labels=("fake", "real")) -> pd.DataFrame:
-    """Confusion matrix as a labelled DataFrame (base numpy, no sklearn needed)."""
-    y_true = _copy(y_true).astype(int)
-    y_pred = (_copy(y_pred) >= 0.5).astype(int)
-    n = len(y_true)
-    mat = np.zeros((2, 2), dtype=int)
-    for i in range(n):
-        mat[y_true[i], y_pred[i]] += 1
-    # rows = true, cols = predicted; labels fixed to 0/"fake",1/"real"
-    return pd.DataFrame(
-        mat,
-        index=pd.Index(labels, name="true"),
-        columns=pd.Index(labels, name="pred"),
-    )
-
-
-def evaluate_binary(y_true, y_score) -> BinaryReport:
-    """Full report in one call; the standard contract used by all model scripts."""
-    y_true = _copy(y_true).astype(int)
-    y_score = _copy(y_score)
-    pred = y_score >= 0.5
-    precision, recall = precision_recall(y_true, pred)
-    return BinaryReport(
-        accuracy=accuracy(y_true, pred),
-        precision=precision,
-        recall=recall,
-        f1=f1_score_binary(y_true, pred),
-        roc_auc=roc_auc(y_true, y_score),
-        n=len(y_true),
-    )
+def evaluate_model(model, dataloader, device) -> dict:
+    """Convenience wrapper: run predictions + compute metrics + timing
+    in one call. Used identically by every model's train.py so results
+    are directly comparable."""
+    y_true, y_pred, y_prob, ms_per_image = get_predictions(model, dataloader, device)
+    metrics = compute_all_metrics(y_true, y_pred, y_prob)
+    metrics["ms_per_image"] = ms_per_image
+    metrics["y_true"] = y_true.tolist()
+    metrics["y_prob"] = y_prob.tolist()
+    return metrics
