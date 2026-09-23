@@ -1,61 +1,33 @@
-# ==============================================================================
-# EXPERIMENT B — ViT-B/16 + Frequency-Hybrid branch
-# Owner: Member C
-#
-# Paired with configs/vit_freq_hybrid.yaml (EXPERIMENT B). Both configs must
-# stay identical except `run_name` and `model.use_frequency_hybrid`, per the
-# protocol's fair-ablation requirement (same train/val/test/cross-gen data,
-# same metrics, same threshold, same seed).
-#
-# Run models/vit/prepare_data.py -c configs/dataset_prep.yaml FIRST so that
-# data/processed/{train,val,test} = StyleGAN(+real) and data/cross_gen_test =
-# Stable Diffusion(+held-out real).
-#
-# Rule: never hardcode paths / lr / batch size / seed in train.py or model.py.
-# Everything tunable lives here.
-# ==============================================================================
-
-run_name: "vit_b16_freq_hybrid_v1"    # EXPERIMENT B — same everything else as configs/vit.yaml
-seed: 42                            # keep identical across all 4 models for fair comparison
-
+# Optional ablation. Freeze its inclusion BEFORE inspecting either test set.
+model_name: vit_freq_hybrid
+module: models.vit.model
+run_name: vit_fft_wish_s42_v1
+seed: 42
+device: auto
 data:
-  train_dir: "data/processed/train"
-  val_dir: "data/processed/val"
-  test_dir: "data/processed/test"                 # in-distribution (same generator family)
-  cross_gen_test_dir: "data/cross_gen_test"        # unseen generator family, touched once
-  image_size: 224                                  # 384 if using a 384-checkpoint
-  batch_size: 32
-  num_workers: 4
-
+  root: data/raw/wish
+  manifest: data/manifests/wish_v1/manifest.csv
+  near_duplicate_review: null
+  batch_size: 16
+  num_workers: 2
 model:
-  backbone: "vit_base_patch16_224"    # timm checkpoint name (ImageNet-21k pretrained)
+  backbone: vit_base_patch16_224.augreg_in21k_ft_in1k
   pretrained: true
-  num_classes: 1                      # single sigmoid logit (real=0, fake=1)
+  num_classes: 1
   dropout: 0.1
-  use_frequency_hybrid: true         # flip true to enable the FFT branch (novelty add-on)
+  use_frequency_hybrid: true
   freq_branch:
-    fft_size: 224                     # matches image_size
     conv_channels: [16, 32, 64]
-    fusion_dim: 128                   # size of fused feature vector concatenated w/ ViT CLS token
-
+    fusion_dim: 128
 train:
-  epochs: 20
-  optimizer: "adamw"
-  lr: 3.0e-5                          # ViTs are LR-sensitive: keep small (2e-5 to 5e-5)
+  epochs: 30
+  early_stopping_patience: 6
+  optimizer: adamw
+  lr: 0.00003
   weight_decay: 0.01
-  warmup_steps_pct: 0.1               # % of total steps used for linear warmup
-  scheduler: "linear_decay"
-  early_stopping_patience: 4
-  monitor_metric: "val_loss"
+  warmup_steps_pct: 0.1
+  effective_batch_size: 32
   grad_clip_norm: 1.0
   mixed_precision: true
-
-evaluation:
-  threshold: 0.5
-  save_confusion_matrix: true
-  save_roc_curve: true
-
 output:
-  results_dir: "results/vit"
-  checkpoint_dir: "results/vit/{run_name}/checkpoints"
-  comparison_dir: "results/comparison"        # shared folder — Member C is the only writer
+  results_dir: results/vit

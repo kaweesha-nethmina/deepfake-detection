@@ -13,6 +13,10 @@ data/cross_gen_test/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/cross_gen_test/.gitkeep
+data/manifests/*
+.pytest_cache/
+.cache/
+results/**/*.tmp
 
 # ---------- Results / generated artifacts --------------------
 # Folder structure is tracked via .gitkeep; contents excluded.

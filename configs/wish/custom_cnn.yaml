@@ -1,6 +1,6 @@
-model_name: vit_b16
-module: models.vit.model
-run_name: vit_b16_wish_s42_v1
+model_name: custom_cnn
+module: models.custom_cnn.model
+run_name: custom_cnn_wish_s42_v1
 seed: 42
 device: auto
 data:
@@ -10,20 +10,18 @@ data:
   batch_size: 16
   num_workers: 2
 model:
-  backbone: vit_base_patch16_224.augreg_in21k_ft_in1k
-  pretrained: true
-  num_classes: 1
-  dropout: 0.1
-  use_frequency_hybrid: false
+  base_channels: 32
+  num_blocks: 4
+  dropout: 0.3
+  num_classes: 2
 train:
   epochs: 30
   early_stopping_patience: 6
   optimizer: adamw
-  lr: 0.00003
-  weight_decay: 0.01
-  warmup_steps_pct: 0.1
+  lr: 0.0003
+  weight_decay: 0.0005
   effective_batch_size: 32
   grad_clip_norm: 1.0
   mixed_precision: true
 output:
-  results_dir: results/vit
+  results_dir: results/custom_cnn

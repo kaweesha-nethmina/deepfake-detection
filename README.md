@@ -51,36 +51,40 @@ generator family and evaluate whether the model generalizes to faces produced by
 
 ## Setup
 
+**Current Wish dataset workflow:** follow [Member C's runnable guide](models/vit/README.md)
+and [the shared data contract](data/README.md). Train with the manifest runner below;
+the older standalone trainers are not the controlled four-model experiment.
+
 ```bash
 # 1) Create + activate environment (recommend Python 3.10+)
 python -m venv .venv
 source .venv/bin/activate            # Windows: .venv\Scripts\activate
 
 # 2) Install dependencies (adjust pinned versions to your hardware)
-pip install -r requirements.txt
+pip install -r requirements-member-c.txt
 
 # 3) Fetch the datasets (never commit binaries)
 #    Follow data/README.md or run the download scripts.
 ```
 
-Import the shared module with (from the repo root):
+Verify the implementation without downloading the dataset:
 
-```python
-import sys; sys.path.insert(0, ".")
-from src.config import ...   # after setup, or:
-from src import utils
+```bash
+python -m pytest -q
 ```
 
 ## How to run each model
 
-All trainers share the same contract: `python models/<name>/train.py -c configs/<name>.yaml`.
-Each writes outputs to `results/<name>/` and print a summary on completion.
+After Member A's manifest passes the audit, use the common train/validation-only
+runner. It imports each owner's model without generating new splits.
 
 ```bash
-python models/custom_cnn/train.py      -c configs/custom_cnn.yaml
-python models/resnet50/train.py        -c configs/resnet50.yaml
-python models/efficientnetv2/train.py  -c configs/efficientnetv2.yaml
-python models/vit/train.py             -c configs/vit.yaml
+python -m models.vit.train -c configs/wish/custom_cnn.yaml
+python -m models.vit.train -c configs/wish/resnet50.yaml
+python -m models.vit.train -c configs/wish/efficientnetv2.yaml
+python -m models.vit.train -c configs/vit.yaml
+python -m models.vit.evaluate_crossgen freeze
+python -m models.vit.evaluate_crossgen run
 ```
 
 Cross-generator evaluation scripts live under `models/vit/` (Owner C) and write to

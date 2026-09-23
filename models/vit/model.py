@@ -47,7 +47,9 @@ class FrequencyBranch(nn.Module):
     @staticmethod
     def to_fft_magnitude(x: torch.Tensor) -> torch.Tensor:
         """Convert a batch of RGB images (B, C, H, W) to log-magnitude FFT spectra."""
-        fft = torch.fft.fft2(x, norm="ortho")
+        # CUDA half-precision FFT does not support the non-power-of-two size 224.
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            fft = torch.fft.fft2(x.float(), norm="ortho")
         fft_shifted = torch.fft.fftshift(fft, dim=(-2, -1))
         magnitude = torch.log(torch.abs(fft_shifted) + 1e-8)
         return magnitude
@@ -68,7 +70,7 @@ class ViTDeepfakeDetector(nn.Module):
 
     def __init__(
         self,
-        backbone: str = "vit_base_patch16_224",
+        backbone: str = "vit_base_patch16_224.augreg_in21k_ft_in1k",
         pretrained: bool = True,
         num_classes: int = 1,
         dropout: float = 0.1,
@@ -115,7 +117,7 @@ def build_model(cfg: dict) -> nn.Module:
     """Factory used by train.py — reads the `model:` section of configs/vit.yaml."""
     m_cfg = cfg["model"]
     return ViTDeepfakeDetector(
-        backbone=m_cfg.get("backbone", "vit_base_patch16_224"),
+        backbone=m_cfg.get("backbone", "vit_base_patch16_224.augreg_in21k_ft_in1k"),
         pretrained=m_cfg.get("pretrained", True),
         num_classes=m_cfg.get("num_classes", 1),
         dropout=m_cfg.get("dropout", 0.1),

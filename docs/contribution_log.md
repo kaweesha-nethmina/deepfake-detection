@@ -19,6 +19,7 @@
 | Date | Member | What was done | Files / links |
 |---|---|---|---|
 | 2026-09-10 | A | Scaffolded repo: structure, gitignore, configs, shared `src/`, READMEs, initial branch setup | `src/*`, `configs/*` |
+| 2026-09-23 | C (Kalana) | Added Wish manifest audit, resumable train/validation-only runner, frozen four-model evaluator, prediction exports/plots, CLI demo, tests and report/notebook workflow. Implemented with Codex assistance; real-data training/evaluation remain pending. Dev merge was not approved. | `models/vit/`, `configs/wish/`, `tests/test_member_c.py`, `notebooks/04_vit_crossgen_evaluation.ipynb`, `docs/member_c_delivery.md` |
 |  |  |  |  |
 |  |  |  |  |
 

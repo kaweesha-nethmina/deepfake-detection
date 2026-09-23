@@ -1,117 +1,167 @@
-# Model 4 — ViT-B/16 (+ Frequency-Hybrid) & Cross-Generator Harness — Owner: Member C
+# Member C: Wish Dataset Workflow
 
-Implements the strict experimental protocol: train/select on **StyleGAN** only,
-evaluate once on the **StyleGAN primary test set**, then — without touching the
-model again — evaluate on **Stable Diffusion** (never seen before). Label
-convention throughout: **REAL = 0, FAKE = 1** (fake is the positive class).
+Run every command from the repository root. This implementation uses only
+`wish096/realvsfake-81k-by-wish`, with Member A's fixed assignments. It never
+creates a replacement random split. No measured detector results are included.
 
-## Pipeline order
+## 1. Environment and offline tests
 
 ```bash
-# 1) Classify the raw download, split StyleGAN 70/15/15, hold out Stable Diffusion,
-#    run leakage checks, and write the dataset summary table.
-python models/vit/prepare_data.py -c configs/dataset_prep.yaml
-
-# 2) Experiment A — ViT-B/16, no frequency branch
-python models/vit/train.py -c configs/vit.yaml
-
-# 3) Experiment B — ViT-B/16 + frequency-hybrid branch (identical config otherwise)
-python models/vit/train.py -c configs/vit_freq_hybrid.yaml
-
-# 4) Score all 4 team models (+ both my experiments) with identical evaluation code
-python models/vit/evaluate_crossgen.py -c configs/crossgen_harness.yaml
-
-# 5) Build the report figures
-jupyter notebook notebooks/04_vit_crossgen_evaluation.ipynb
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-member-c.txt
+python -m pytest -q
 ```
 
-## Files
+Tests use generated images and randomly initialized networks. They do NOT prove
+deepfake accuracy. On Colab/Kaggle select a GPU runtime first, retain its matched
+CUDA torch/torchvision installation, and install the remaining requirements.
+Training records the actual package versions, device and CUDA version for each run.
 
-| File | Purpose |
-|---|---|
-| `prepare_data.py` | Scans the raw Kaggle download, classifies every file as real/fake + generator, reserves real images for the cross-gen test **before** splitting (zero leakage by construction), stratified-splits the StyleGAN pool 70/15/15, runs leakage checks, materializes `data/processed/{train,val,test}` and `data/cross_gen_test`, writes the dataset verification + leakage reports and the summary table. |
-| `common.py` | `set_seed`, `load_config`, `build_dataset_paths`, `DeepfakeImageDataset`, augmentation transforms. Tries the shared `src/` module first, falls back to a local implementation. Only imports torch lazily where actually needed, so `prepare_data.py` runs even without a working torch install. |
-| `model.py` | `ViTDeepfakeDetector` — ViT-B/16 (`timm`) + optional `FrequencyBranch` (2D FFT → small CNN), toggled by `model.use_frequency_hybrid`. |
-| `train.py` | Trains, selects on val, evaluates primary test once, then cross-gen once (no model changes in between). Writes `metrics.csv` (incl. `accuracy_drop` and `relative_accuracy_drop_pct`) and the shared comparison row. |
-| `evaluate_crossgen.py` | The **cross-generator evaluation harness** — identical evaluation code scores any teammate's checkpoint, so the 4-model comparison isn't confounded by inconsistent eval code. |
-| `README.md` | This file. |
+## 2. Member A's handoff
 
-## Dataset protocol (`configs/dataset_prep.yaml`)
+Obtain the images, exact dataset version, fixed splits, preprocessing details,
+and any available identity groups. Labels alone are not enough. A shared cloud
+dataset mount is sufficient; you do not need another full copy on your Mac.
 
-- **Training generator**: StyleGAN. **Cross-generator**: Stable Diffusion.
-- StyleGAN pool (real + StyleGAN-fake) → stratified 70/15/15 → train/val/primary-test.
-- Real images needed for the Stable Diffusion cross-gen test (so it has both
-  classes to score) are reserved **before** the StyleGAN split, from a
-  disjoint random subset — this is what guarantees zero leakage rather than
-  relying on a check to catch it after the fact.
-- Stable Diffusion images never enter training, validation, tuning, threshold
-  selection, or architecture/model selection — only the final cross-gen eval.
-- **Nothing is hardcoded**: `label_rules` / `generator_rules` in the config
-  are keyword matches against the actual downloaded file paths, and every
-  count in the verification report and summary table is measured, not
-  assumed. **Verify the keywords match your actual folder names after
-  downloading** — the exact Kaggle layout wasn't independently confirmed
-  when this was written. The script prints any file it can't classify so
-  nothing is silently dropped.
-- Supplementary/"other" fake images (matching neither keyword set) are
-  excluded from both pools by default, per the protocol's instruction not to
-  mix in supplementary datasets without explicit configuration.
+Use [the data contract](../../data/README.md). A must export one CSV with columns:
 
-**Tested**: `prepare_data.py` was run end-to-end against a synthetic dataset
-with this same folder shape (`real/<source>/*.jpg`, `fake/stylegan/*.jpg`,
-`fake/stable_diffusion/*.jpg`) to confirm the split, leakage detection, and
-file materialization all produce consistent, matching counts.
+```text
+filepath,label,source,split,identity
+Real/RFF (1).jpg,0,FFHQ,train,
+Fake/FSG (1).jpg,1,StyleGAN,train,
+```
 
-### Leakage checks
+The above two rows illustrate syntax only, not a valid complete manifest.
+The actual manifest must contain both classes in `train`, `val`, `test`, and
+`cross_gen`. Paths are relative to the configured dataset root.
 
-Reported (never silently fixed) in `results/vit/dataset_leakage_report.json`:
-unique paths per split, duplicate filenames within a split, and content-hash
-overlap between every pair of {train, val, test, cross_gen} — this also
-directly verifies requirements 4–9 from the protocol (no train/val/test
-overlap, and Stable Diffusion absent from train/val/test).
+```bash
+python -m models.vit.prepare_data --manifest /path/to/member_a.csv --data-root /path/to/RealVsFake --dataset-version VERSION_FROM_A --output data/manifests/wish_v1
+```
 
-### Dataset summary table
+The audit checks decoding, SHA-256, duplicate pixels, source/label conflicts,
+generator isolation, class presence and supplied identities. Its outputs are
+`manifest.csv`, `audit.json`, and `near_duplicates.csv`. dHash is a candidate
+screen, not proof that all near-duplicates or identities were found.
 
-`results/comparison/dataset_summary_table.csv` — `Dataset | Generator | Role | Real | Fake | Usage`,
-built from measured counts only.
+If near-duplicates are reported, A reviews them. Actual overlaps require a
+corrected team-wide manifest and a new audit directory. For false positives only,
+record a review JSON with `manifest_sha256`, `reviewer`, `rationale`, and
+`decision: "false_positives_only"`; set `data.near_duplicate_review` in each training
+config and `near_duplicate_review` in the evaluation config. Do not bypass review.
 
-## Two experiments (fair ablation)
+Set `data.root` in all training configs and `data_root` in the harness to the
+actual mount. Set their manifest paths to the SAME audited CSV. Training verifies
+train/validation hashes only; the final evaluator verifies every split.
 
-| | Experiment A | Experiment B |
-|---|---|---|
-| Config | `configs/vit.yaml` | `configs/vit_freq_hybrid.yaml` |
-| `run_name` | `vit_b16_baseline_v1` | `vit_b16_freq_hybrid_v1` |
-| `model.use_frequency_hybrid` | `false` | `true` |
-| Everything else | identical | identical |
+## 3. Training-only smoke test
 
-Both use the same StyleGAN train/val/test split, the same Stable Diffusion
-cross-gen set, the same seed, the same threshold, and the same evaluation
-code — so the only thing that can explain a difference in results is the
-frequency-hybrid branch itself.
+```bash
+python -m models.vit.train -c configs/vit.yaml --smoke
+```
 
-## Metrics (per model, in `metrics.csv` / the harness's `final_comparison_table.csv`)
+This uses at most 32 existing training and 32 existing validation examples for
+one epoch, saves to a separate `_smoke` run, and never predicts either test set.
+The first ViT run downloads public pretrained weights. Smoke checkpoints are
+rejected by final evaluation. Change run_name before repeating a smoke run.
 
-- Accuracy, precision, recall, F1, ROC-AUC — on both the primary test set and
-  the cross-generator test set.
-- `accuracy_drop = test_acc - cross_gen_acc`
-- `relative_accuracy_drop_pct = accuracy_drop / test_acc * 100`
-- Training time, inference time/image, parameter count.
+## 4. Full core experiments
 
-**Per the protocol: the highest primary-test accuracy does not automatically
-mean the best model** — the research question is generalization, so
-`accuracy_drop` / `relative_accuracy_drop_pct` are the numbers to lead with
-in the report's critical analysis, not raw primary accuracy.
+```bash
+python -m models.vit.train -c configs/wish/custom_cnn.yaml
+python -m models.vit.train -c configs/wish/resnet50.yaml
+python -m models.vit.train -c configs/wish/efficientnetv2.yaml
+python -m models.vit.train -c configs/vit.yaml
+```
 
-## Dependencies
+The common runner imports each owner's architecture; it does not replace it.
+These are the supported Wish training commands, not the legacy standalone
+trainers with independently generated splits. A/B can run their models on their
+own GPU sessions using the same manifest/configs and return the entire run folder.
 
-Add to the shared `requirements.txt` if not already there: `torch`,
-`torchvision`, `timm`, `scikit-learn`, `pandas`, `numpy`, `pyyaml`, `pillow`,
-`matplotlib`, `seaborn`.
+All runs use seed 42, 224x224 RGB input, effective batch 32, at most 30 epochs,
+and best validation loss with patience 6. CNN warmup/fine-tuning histories stay
+in one run. Checkpoint-specific normalization is saved. CUDA uses AMP; CPU/MPS
+use float32. Reduce `data.batch_size` to 8/4/2 if memory is limited; accumulation
+maintains effective batch size. Do not silently reduce the full training dataset.
 
-## Notebook
+```bash
+python -m models.vit.train -c configs/vit.yaml --resume results/vit/vit_b16_wish_s42_v1/checkpoints/last.pt
+```
 
-`notebooks/04_vit_crossgen_evaluation.ipynb` reads the dataset summary table,
-my `metrics.csv`, and the other members' `metrics.csv` files (read-only), and
-builds: the dataset summary, the final comparison table, absolute and
-relative accuracy-drop charts, ROC overlays, confusion matrix grids,
-efficiency-vs-accuracy, and the Experiment A vs. B ablation comparison.
+Resume requires unchanged config/manifest and the original run directory, including
+best_model.pt. It restores optimizer, scheduler, scaler, epoch, RNG and history.
+Archive runs to persistent Drive/Kaggle storage between GPU sessions. CPU and
+GPU floating-point results need not be bit-identical; record runtime differences.
+
+Every run stores `run_config_used.json`, `environment.json`, `training_history.csv`,
+`learning_curves.png`, best weights and resumable last state. No test metrics are
+produced by training. Use a NEW run_name for a new experiment.
+
+## 5. Freeze and final evaluation
+
+Edit `configs/crossgen_harness.yaml` to point to all four returned checkpoints.
+Checkpoints must identify the shared manifest and validation-only selection.
+Legacy plain state dictionaries require an owner-verified `<checkpoint>.json`
+sidecar with the same metadata schema; do not invent training provenance.
+
+```bash
+python -m models.vit.evaluate_crossgen freeze -c configs/crossgen_harness.yaml
+python -m models.vit.evaluate_crossgen run --device cuda
+```
+
+Freeze hashes all weights/configs and requires all four models. Evaluation uses
+identical ordered test samples for every model. Missing weights, stale hashes or
+smoke runs fail instead of creating a misleading partial final comparison.
+
+Final evidence appears in `results/comparison/final/`: predictions, comparison
+table, model results JSON, confusion matrices/ROC plots, F1 comparison, and ranked
+false-positive/false-negative cases. `status.json` must say `complete`.
+Latency is measured after warmup with device synchronization; single-image
+forward latency excludes loading, cropping, transfers and preprocessing. Compare
+models on the same hardware. Parameter counts include total and trainable values.
+
+```bash
+python -m models.vit.evaluate_crossgen plots --predictions results/comparison/final/predictions.csv --output results/comparison/regenerated
+```
+
+This regenerates metrics/figures without inference. Never change hyperparameters
+after looking at final results and still describe that test as untouched.
+Optional repeat seeds or FFT must be declared before the freeze, not selected
+because they look better on Stable Diffusion. The FFT configuration is excluded
+from the default four-model harness.
+
+## 6. Predict a cropped face
+
+```bash
+python -m models.vit.predict --config configs/vit.yaml --checkpoint results/vit/vit_b16_wish_s42_v1/checkpoints/best_model.pt --image /path/to/cropped_face.jpg
+```
+
+The CLI and notebook demo use the same probability conversion and preprocessing
+as evaluation. Scores are experimental, not calibrated forensic probabilities.
+Do not use uncropped group photographs or infer whether a person is trustworthy.
+
+## Integration status
+
+Work is on `feature/kalana`. The requested `origin/dev` merge was not approved;
+it has NOT been performed. The main branch's Streamlit demo is not present here,
+so GUI integration is pending that merge. `runtime.build_model` supports both
+`build_model(cfg)` and `get_model(num_classes=2)`, but different architecture heads
+require matching configs/checkpoints and must not be silently interchanged.
+The newer dev trainers must have intermediate test evaluation disabled before use
+for this protocol. Use the new manifest runner meanwhile.
+
+The only teammate architecture fix in this contribution is constructing pretrained
+ResNet with its original classifier size before replacing the head; torchvision
+rejects pretrained weights combined with an incompatible initial class count.
+
+## Sources
+
+- [Dataset owner](https://www.kaggle.com/datasets/wish096/realvsfake-81k-by-wish)
+- [ViT checkpoint](https://huggingface.co/timm/vit_base_patch16_224.augreg_in21k_ft_in1k)
+- [ViT paper](https://arxiv.org/abs/2010.11929)
+- [Training ViT / AugReg](https://arxiv.org/abs/2106.10270)
+
+Model performance, GPU memory requirements and dataset counts must be measured
+on the actual handoff. No real images or trained checkpoints are currently included.

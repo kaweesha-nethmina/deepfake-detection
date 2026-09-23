@@ -1,282 +1,271 @@
-"""
-Training entry point for Model 4 (ViT / frequency-hybrid).
-Owner: Member C
-
-Usage:
-    python models/vit/train.py -c configs/vit.yaml
-
-This script is self-contained: it uses models/vit/common.py, which transparently
-uses the shared src/ module if it's ready, and falls back to a local working
-implementation otherwise (see common.py's docstring). Nothing here depends on
-another member's folder being finished.
-
-Follows the strict experimental protocol: run models/vit/prepare_data.py first
-so that data/processed/{train,val,test} contain ONLY StyleGAN(+real) images
-and data/cross_gen_test contains ONLY Stable-Diffusion(+held-out real) images.
-This script trains and selects the model using train/val only, evaluates the
-primary (StyleGAN) test set exactly once, and — without any further model
-change — evaluates the cross-generator (Stable Diffusion) set. Label
-convention throughout: REAL=0, FAKE=1 (FAKE is the positive class).
-
-Writes:
-    results/vit/<run_name>/checkpoints/best_model.pt
-    results/vit/<run_name>/training_history.csv
-    results/vit/<run_name>/metrics.csv
-    results/vit/<run_name>/roc_primary_test.csv, roc_cross_gen.csv
-    results/vit/<run_name>/confusion_matrix_primary_test.csv, confusion_matrix_cross_gen.csv
-    results/vit/<run_name>/run_config_used.json
-    results/comparison/crossgen_<run_name>.csv   (shared folder — I'm the only writer)
-"""
+"""Manifest-based team training. This command never evaluates either test set."""
+from __future__ import annotations
 
 import argparse
+import copy
+import importlib.metadata
 import json
-import sys
+import math
+import platform
+import random
+import subprocess
 import time
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
-from torch.optim import AdamW
-from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
-from sklearn.metrics import (
-    accuracy_score,
-    precision_recall_fscore_support,
-    roc_auc_score,
-    roc_curve,
-    confusion_matrix,
-)
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # repo root, for `import src` / `import models`
-from models.vit.common import set_seed, load_config, build_dataset_paths, DeepfakeImageDataset  # noqa: E402
-from models.vit.model import build_model  # noqa: E402
+from models.vit.manifest import load_audited_manifest
+from models.vit.reporting import compute_metrics, learning_curves
+from models.vit.runtime import (ManifestDataset, binary_loss, build_model, device_for,
+                                load_config, preprocessing_for, probabilities, set_seed)
 
 
-def linear_warmup_decay(step: int, total_steps: int, warmup_steps: int) -> float:
-    if step < warmup_steps:
-        return step / max(1, warmup_steps)
-    remaining = max(0, total_steps - step)
-    remaining_total = max(1, total_steps - warmup_steps)
-    return remaining / remaining_total
-
-
-def run_epoch(model, loader, criterion, optimizer, scheduler, device, train: bool):
-    model.train() if train else model.eval()
-    total_loss, all_probs, all_labels = 0.0, [], []
-
-    if len(loader.dataset) == 0:
-        return 0.0, np.array([]), np.array([])
-
-    context = torch.enable_grad() if train else torch.no_grad()
-    with context:
-        for images, labels in loader:
-            images, labels = images.to(device), labels.to(device).float()
-
-            if train:
-                optimizer.zero_grad()
-
-            logits = model(images)
-            loss = criterion(logits, labels)
-
-            if train:
-                loss.backward()
-                nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                optimizer.step()
-                scheduler.step()
-
-            total_loss += loss.item() * images.size(0)
-            all_probs.extend(torch.sigmoid(logits).detach().cpu().numpy().tolist())
-            all_labels.extend(labels.detach().cpu().numpy().tolist())
-
-    avg_loss = total_loss / len(loader.dataset)
-    return avg_loss, np.array(all_probs), np.array(all_labels)
-
-
-def compute_metrics(probs: np.ndarray, labels: np.ndarray, threshold: float = 0.5) -> dict:
-    if len(labels) == 0:
-        return {"accuracy": float("nan"), "precision": float("nan"),
-                "recall": float("nan"), "f1": float("nan"), "roc_auc": float("nan")}
-    preds = (probs >= threshold).astype(int)
-    precision, recall, f1, _ = precision_recall_fscore_support(
-        labels, preds, average="binary", zero_division=0
-    )
-    try:
-        auc = roc_auc_score(labels, probs)
-    except ValueError:
-        auc = float("nan")  # only one class present in this split
-    return {
-        "accuracy": accuracy_score(labels, preds),
-        "precision": precision,
-        "recall": recall,
-        "f1": f1,
-        "roc_auc": auc,
-    }
-
-
-def save_curves(probs, labels, out_dir: Path, tag: str, save_roc: bool, save_cm: bool):
-    if len(labels) == 0:
+def phase_parameters(model, cfg, warmup):
+    """Keep teammates' heads/architectures; only apply their staged unfreezing."""
+    for parameter in model.parameters():
+        parameter.requires_grad = True
+    if not cfg["train"].get("warmup_epochs", 0):
         return
-    out_dir.mkdir(parents=True, exist_ok=True)
-    if save_roc:
-        fpr, tpr, _ = roc_curve(labels, probs)
-        pd.DataFrame({"fpr": fpr, "tpr": tpr}).to_csv(out_dir / f"roc_{tag}.csv", index=False)
-    if save_cm:
-        cm = confusion_matrix(labels, (probs >= 0.5).astype(int), labels=[0, 1])
-        np.savetxt(out_dir / f"confusion_matrix_{tag}.csv", cm, delimiter=",", fmt="%d")
+    for parameter in model.parameters():
+        parameter.requires_grad = False
+    backbone = getattr(model, "backbone", model)
+    head = getattr(model, "head", None)
+    if head is None:
+        head = getattr(backbone, "fc", getattr(backbone, "classifier", None))
+    if head is None:
+        raise ValueError("Cannot identify classifier for staged training.")
+    for parameter in head.parameters():
+        parameter.requires_grad = True
+    if not warmup:
+        if hasattr(backbone, "layer4"):
+            blocks = [backbone.layer3, backbone.layer4]
+        elif hasattr(backbone, "blocks"):
+            blocks = list(backbone.blocks.children())[-2:]
+        elif hasattr(backbone, "features"):
+            blocks = list(backbone.features.children())[-2:]
+        else:
+            raise ValueError("Cannot identify backbone blocks for fine-tuning.")
+        for block in blocks:
+            for parameter in block.parameters():
+                parameter.requires_grad = True
 
 
-def count_params(model: nn.Module) -> int:
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+def run_epoch(model, loader, device, optimizer=None, scheduler=None, scaler=None,
+              accumulation=1, grad_clip=1.0, amp=False):
+    training = optimizer is not None
+    model.train(training)
+    if training:
+        # Frozen BatchNorm must not silently update running statistics.
+        for module in model.modules():
+            parameters = list(module.parameters(recurse=False))
+            if isinstance(module, torch.nn.modules.batchnorm._BatchNorm) and parameters and not any(p.requires_grad for p in parameters):
+                module.eval()
+        optimizer.zero_grad(set_to_none=True)
+    total, count, scores, labels_out = 0.0, 0, [], []
+    with torch.set_grad_enabled(training):
+        for step, (images, labels, _) in enumerate(loader):
+            images, labels = images.to(device), labels.to(device)
+            with torch.autocast(device_type=device.type, enabled=amp):
+                logits = model(images)
+                loss = binary_loss(logits, labels)
+            if not torch.isfinite(loss):
+                raise ValueError("Nonfinite loss; refusing to save a misleading result.")
+            if training:
+                # Weight a partial final accumulation window by sample count.
+                start = (step // accumulation) * accumulation * loader.batch_size
+                window_samples = min(accumulation * loader.batch_size, len(loader.dataset) - start)
+                scaled_loss = loss * len(labels) / window_samples
+                scaler.scale(scaled_loss).backward()
+                if (step + 1) % accumulation == 0 or step + 1 == len(loader):
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+                    old_scale = scaler.get_scale()
+                    scaler.step(optimizer)
+                    scaler.update()
+                    if scheduler is not None and scaler.get_scale() >= old_scale:
+                        scheduler.step()
+                    optimizer.zero_grad(set_to_none=True)
+            total += float(loss.detach()) * len(labels)
+            count += len(labels)
+            scores.extend(probabilities(logits).detach().cpu().tolist())
+            labels_out.extend(labels.cpu().tolist())
+    if not count:
+        raise ValueError("Empty loader.")
+    return total / count, compute_metrics(labels_out, scores)
+
+
+def rng_state(generator):
+    np_state = np.random.get_state()
+    state = {"python": random.getstate(), "numpy": [np_state[0], np_state[1].tolist(), *np_state[2:]],
+             "torch": torch.get_rng_state(), "loader": generator.get_state()}
+    if torch.cuda.is_available():
+        state["cuda"] = torch.cuda.get_rng_state_all()
+    if torch.backends.mps.is_available():
+        state["mps"] = torch.mps.get_rng_state()
+    return state
+
+
+def restore_rng(state, generator):
+    random.setstate(state["python"])
+    n = state["numpy"]
+    np.random.set_state((n[0], np.asarray(n[1], dtype="uint32"), *n[2:]))
+    torch.set_rng_state(state["torch"])
+    generator.set_state(state["loader"])
+    if "cuda" in state:
+        torch.cuda.set_rng_state_all(state["cuda"])
+    if "mps" in state:
+        torch.mps.set_rng_state(state["mps"])
+
+
+def train(cfg, resume=None):
+    cfg = copy.deepcopy(cfg)
+    t = cfg["train"]
+    if not 1 <= t["epochs"] <= 30 or t["early_stopping_patience"] != 6:
+        raise ValueError("Team protocol: 1..30 epochs and patience=6.")
+    batch, effective = cfg["data"]["batch_size"], t.get("effective_batch_size", 32)
+    if batch < 1 or effective < batch or effective % batch:
+        raise ValueError("Effective batch size must be a positive multiple of microbatch size.")
+    rows, audit = load_audited_manifest(cfg["data"]["manifest"], cfg["data"]["root"],
+                                       cfg["data"].get("near_duplicate_review"), ("train", "val"))
+    out = Path(cfg["output"]["results_dir"]) / cfg["run_name"]
+    if out.exists() and not resume:
+        raise FileExistsError(f"Use a new run_name or --resume: {out}")
+    device = device_for(cfg.get("device", "auto"))
+    set_seed(cfg["seed"])
+    model = build_model(cfg, pretrained=False if resume else None).to(device)
+    preproc = preprocessing_for(model, cfg)
+    generator = torch.Generator().manual_seed(cfg["seed"])
+    loaders = {part: DataLoader(ManifestDataset(rows, cfg["data"]["root"], part, preproc,
+                       train=part == "train", limit=32 if cfg.get("smoke") else None),
+                       batch_size=batch, shuffle=part == "train", generator=generator,
+                       num_workers=cfg["data"].get("num_workers", 0), drop_last=False)
+               for part in ("train", "val")}
+    amp = bool(t.get("mixed_precision", True) and device.type == "cuda")
+    scaler = torch.amp.GradScaler("cuda", enabled=amp)
+    history, best_loss, stale, elapsed, start_epoch = [], float("inf"), 0, 0.0, 1
+    checkpoint = None
+    if resume:
+        checkpoint = torch.load(resume, map_location="cpu", weights_only=True)
+        if checkpoint["config"] != cfg or checkpoint["metadata"]["manifest_sha256"] != audit["manifest_sha256"]:
+            raise ValueError("Resume config/manifest mismatch.")
+        model.load_state_dict(checkpoint["model_state"])
+        history, best_loss, stale = checkpoint["history"], checkpoint["best_loss"], checkpoint["stale"]
+        elapsed, start_epoch = checkpoint["elapsed"], checkpoint["epoch"] + 1
+        scaler.load_state_dict(checkpoint["scaler"])
+        restore_rng(checkpoint["rng"], generator)
+        if not (out / "checkpoints/best_model.pt").exists():
+            raise FileNotFoundError("Resume needs the original best checkpoint as well as last.pt.")
+        if checkpoint["phase"] == "finetune" and stale >= t["early_stopping_patience"]:
+            print("This run already reached early stopping; no further updates are allowed.")
+            return out
+    out.mkdir(parents=True, exist_ok=True)
+    ckpt_dir = out / "checkpoints"
+    ckpt_dir.mkdir(exist_ok=True)
+    (out / "run_config_used.json").write_text(json.dumps(cfg, indent=2))
+    versions = {name: importlib.metadata.version(name) for name in
+                ("torch", "torchvision", "timm", "numpy", "pandas", "scikit-learn", "Pillow", "PyYAML")}
+    environment = {"python": platform.python_version(), "packages": versions, "device": str(device),
+                   "cuda": torch.version.cuda,
+                   "gpu": torch.cuda.get_device_name(device) if device.type == "cuda" else platform.machine()}
+    try:
+        environment["git_commit"] = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        environment["git_dirty"] = bool(subprocess.check_output(["git", "status", "--porcelain"], text=True).strip())
+    except (OSError, subprocess.CalledProcessError):
+        environment["git_commit"] = None
+    (out / "environment.json").write_text(json.dumps(environment, indent=2))
+    metadata = {"model_name": cfg["model_name"], "run_name": cfg["run_name"],
+                "manifest_sha256": audit["manifest_sha256"], "dataset_version": audit["dataset_version"],
+                "preprocessing": preproc, "label_mapping": {"real": 0, "fake": 1},
+                "threshold": 0.5, "selection": "validation_loss", "smoke": cfg.get("smoke", False),
+                "model_config": cfg["model"], "module": cfg["module"], "seed": cfg["seed"]}
+    current_phase, optimizer, scheduler = None, None, None
+    for epoch in range(start_epoch, t["epochs"] + 1):
+        warmup = epoch <= t.get("warmup_epochs", 0)
+        phase = "warmup" if warmup else "finetune"
+        if phase != current_phase:
+            phase_parameters(model, cfg, warmup)
+            lr = t.get("warmup_lr", t["lr"]) if warmup else t["lr"]
+            cls = torch.optim.Adam if t.get("optimizer") == "adam" else torch.optim.AdamW
+            optimizer = cls(filter(lambda p: p.requires_grad, model.parameters()), lr=lr,
+                            weight_decay=t["weight_decay"])
+            total_steps = max(1, t["epochs"] * math.ceil(len(loaders["train"]) / (effective // batch)))
+            warm_steps = int(total_steps * t.get("warmup_steps_pct", 0))
+            def schedule(step):
+                if step < warm_steps:
+                    return (step + 1) / max(1, warm_steps)
+                return max(0.0, (total_steps - step) / max(1, total_steps - warm_steps))
+            scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, schedule)
+            if checkpoint and checkpoint["phase"] == phase:
+                optimizer.load_state_dict(checkpoint["optimizer"])
+                scheduler.load_state_dict(checkpoint["scheduler"])
+            elif current_phase is not None or checkpoint:
+                stale = 0
+            current_phase = phase
+        tick = time.perf_counter()
+        train_loss, train_metrics = run_epoch(model, loaders["train"], device, optimizer, scheduler,
+                                              scaler, effective // batch, t.get("grad_clip_norm", 1.0), amp)
+        val_loss, val_metrics = run_epoch(model, loaders["val"], device, amp=amp)
+        elapsed += time.perf_counter() - tick
+        history.append({"epoch": epoch, "phase": phase, "train_loss": train_loss, "val_loss": val_loss,
+                        "train_accuracy": train_metrics["accuracy"], "val_accuracy": val_metrics["accuracy"],
+                        "train_f1": train_metrics["f1_score"], "val_f1": val_metrics["f1_score"],
+                        "trainable_parameters": sum(p.numel() for p in model.parameters() if p.requires_grad),
+                        "lr": optimizer.param_groups[0]["lr"], "elapsed_seconds": elapsed})
+        metadata.update(training_time_seconds=elapsed,
+                        total_parameters=sum(p.numel() for p in model.parameters()),
+                        trainable_parameters=sum(p.numel() for p in model.parameters() if p.requires_grad))
+        if val_loss < best_loss:
+            best_loss, stale = val_loss, 0
+            torch.save({"model_state": model.state_dict(), "metadata": dict(metadata, best_epoch=epoch)},
+                       ckpt_dir / "best_model.pt")
+        else:
+            stale += 1
+        state = {"model_state": model.state_dict(), "metadata": metadata, "config": cfg,
+                 "optimizer": optimizer.state_dict(), "scheduler": scheduler.state_dict(),
+                 "scaler": scaler.state_dict(), "epoch": epoch, "phase": phase, "history": history,
+                 "best_loss": best_loss, "stale": stale, "elapsed": elapsed, "rng": rng_state(generator)}
+        temporary = ckpt_dir / "last.tmp"
+        torch.save(state, temporary)
+        temporary.replace(ckpt_dir / "last.pt")
+        pd.DataFrame(history).to_csv(out / "training_history.csv", index=False)
+        print(f"epoch={epoch} phase={phase} train_loss={train_loss:.4f} val_loss={val_loss:.4f}", flush=True)
+        if not warmup and stale >= t["early_stopping_patience"]:
+            break
+    if not history:
+        raise ValueError("No training history; check resume epoch.")
+    learning_curves(history, out / "learning_curves.png")
+    # Total cost includes epochs after the selected checkpoint, not just its prefix.
+    best = torch.load(ckpt_dir / "best_model.pt", map_location="cpu", weights_only=True)
+    best["metadata"]["training_time_seconds"] = elapsed
+    torch.save(best, ckpt_dir / "best_model.pt")
+    (out / "training_complete.json").write_text(json.dumps({"status": "smoke_only" if cfg.get("smoke") else "trained",
+                                                           "epochs": len(history), "seconds": elapsed}, indent=2))
+    return out
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--config", required=True, help="Path to configs/vit.yaml")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("-c", "--config", default="configs/vit.yaml")
+    parser.add_argument("--data-root")
+    parser.add_argument("--manifest")
+    parser.add_argument("--device")
+    parser.add_argument("--resume")
+    parser.add_argument("--smoke", action="store_true")
     args = parser.parse_args()
-
     cfg = load_config(args.config)
-    set_seed(cfg["seed"])
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
-
-    run_name = cfg["run_name"]
-    results_dir = Path(cfg["output"]["results_dir"]) / run_name
-    checkpoint_dir = Path(cfg["output"]["checkpoint_dir"].format(run_name=run_name))
-    comparison_dir = Path(cfg["output"]["comparison_dir"])
-    results_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    comparison_dir.mkdir(parents=True, exist_ok=True)
-
-    # ---- data -----------------------------------------------------------
-    paths = build_dataset_paths(cfg["data"])
-    image_size = cfg["data"]["image_size"]
-
-    train_ds = DeepfakeImageDataset(paths["train_dir"], image_size=image_size, augment=True)
-    val_ds = DeepfakeImageDataset(paths["val_dir"], image_size=image_size, augment=False)
-    test_ds = DeepfakeImageDataset(paths["test_dir"], image_size=image_size, augment=False)
-    cross_gen_ds = DeepfakeImageDataset(paths["cross_gen_test_dir"], image_size=image_size, augment=False)
-
-    bs = cfg["data"]["batch_size"]
-    nw = cfg["data"]["num_workers"]
-    train_loader = DataLoader(train_ds, batch_size=bs, shuffle=True, num_workers=nw, drop_last=True)
-    val_loader = DataLoader(val_ds, batch_size=bs, shuffle=False, num_workers=nw)
-    test_loader = DataLoader(test_ds, batch_size=bs, shuffle=False, num_workers=nw)
-    cross_gen_loader = DataLoader(cross_gen_ds, batch_size=bs, shuffle=False, num_workers=nw)
-
-    if len(train_ds) == 0:
-        print("[warn] Training set is empty — populate data/ per data/README.md, "
-              "then re-run. Continuing to build/save an untrained checkpoint so the "
-              "pipeline shape can still be verified end to end.")
-
-    # ---- model / optim / scheduler --------------------------------------
-    model = build_model(cfg).to(device)
-    criterion = nn.BCEWithLogitsLoss()
-    t_cfg = cfg["train"]
-    optimizer = AdamW(model.parameters(), lr=t_cfg["lr"], weight_decay=t_cfg["weight_decay"])
-
-    steps_per_epoch = max(1, len(train_loader))
-    total_steps = t_cfg["epochs"] * steps_per_epoch
-    warmup_steps = int(total_steps * t_cfg["warmup_steps_pct"])
-    scheduler = LambdaLR(
-        optimizer, lr_lambda=lambda step: linear_warmup_decay(step, total_steps, warmup_steps)
-    )
-
-    # ---- training loop with early stopping -------------------------------
-    best_val_loss = float("inf")
-    best_state = None
-    patience_counter = 0
-    history = []
-
-    train_start = time.time()
-    for epoch in range(1, t_cfg["epochs"] + 1):
-        train_loss, _, _ = run_epoch(model, train_loader, criterion, optimizer, scheduler, device, train=True)
-        val_loss, val_probs, val_labels = run_epoch(
-            model, val_loader, criterion, optimizer, scheduler, device, train=False
-        )
-        val_metrics = compute_metrics(val_probs, val_labels, cfg["evaluation"]["threshold"])
-        history.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss, **val_metrics})
-        print(f"[epoch {epoch:02d}] train_loss={train_loss:.4f} val_loss={val_loss:.4f} "
-              f"val_acc={val_metrics['accuracy']:.4f} val_auc={val_metrics['roc_auc']:.4f}")
-
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
-            patience_counter = 0
-        else:
-            patience_counter += 1
-            if patience_counter >= t_cfg["early_stopping_patience"]:
-                print(f"Early stopping at epoch {epoch} (no val_loss improvement).")
-                break
-
-    train_time_sec = time.time() - train_start
-    if best_state is not None:
-        model.load_state_dict(best_state)
-    torch.save(model.state_dict(), checkpoint_dir / "best_model.pt")
-    pd.DataFrame(history).to_csv(results_dir / "training_history.csv", index=False)
-
-    # ---- final evaluation: primary (in-distribution) test set, touched once ----
-    _, test_probs, test_labels = run_epoch(model, test_loader, criterion, optimizer, scheduler, device, train=False)
-    test_metrics = compute_metrics(test_probs, test_labels, cfg["evaluation"]["threshold"])
-    save_curves(test_probs, test_labels, results_dir, "primary_test",
-                cfg["evaluation"]["save_roc_curve"], cfg["evaluation"]["save_confusion_matrix"])
-
-    # ---- cross-generator evaluation: unseen generator family --------------
-    inf_start = time.time()
-    _, xgen_probs, xgen_labels = run_epoch(model, cross_gen_loader, criterion, optimizer, scheduler, device, train=False)
-    inference_time_per_image = (time.time() - inf_start) / max(1, len(cross_gen_ds))
-    xgen_metrics = compute_metrics(xgen_probs, xgen_labels, cfg["evaluation"]["threshold"])
-    save_curves(xgen_probs, xgen_labels, results_dir, "cross_gen",
-                cfg["evaluation"]["save_roc_curve"], cfg["evaluation"]["save_confusion_matrix"])
-
-    accuracy_drop = test_metrics["accuracy"] - xgen_metrics["accuracy"]
-    relative_accuracy_drop_pct = (
-        100 * accuracy_drop / test_metrics["accuracy"]
-        if test_metrics["accuracy"] not in (0, float("nan")) and not np.isnan(test_metrics["accuracy"])
-        else float("nan")
-    )
-    n_params = count_params(model)
-
-    metrics_row = {
-        "model": "vit_frequency_hybrid" if cfg["model"]["use_frequency_hybrid"] else "vit_b16",
-        "run_name": run_name,
-        "val_acc": history[-1]["accuracy"] if history else float("nan"),
-        "val_auc": history[-1]["roc_auc"] if history else float("nan"),
-        "test_acc": test_metrics["accuracy"],
-        "test_precision": test_metrics["precision"],
-        "test_recall": test_metrics["recall"],
-        "test_f1": test_metrics["f1"],
-        "test_auc": test_metrics["roc_auc"],
-        "cross_gen_acc": xgen_metrics["accuracy"],
-        "cross_gen_precision": xgen_metrics["precision"],
-        "cross_gen_recall": xgen_metrics["recall"],
-        "cross_gen_f1": xgen_metrics["f1"],
-        "cross_gen_auc": xgen_metrics["roc_auc"],
-        "accuracy_drop": accuracy_drop,
-        "relative_accuracy_drop_pct": relative_accuracy_drop_pct,
-        "train_time_sec": train_time_sec,
-        "inference_time_sec_per_image": inference_time_per_image,
-        "num_params": n_params,
-    }
-    pd.DataFrame([metrics_row]).to_csv(results_dir / "metrics.csv", index=False)
-
-    comparison_path = comparison_dir / f"crossgen_{run_name}.csv"
-    pd.DataFrame([metrics_row]).to_csv(comparison_path, index=False)
-
-    with open(results_dir / "run_config_used.json", "w") as f:
-        json.dump(cfg, f, indent=2)
-
-    print("\n=== Run complete ===")
-    print(f"Run name: {run_name}")
-    print(f"Primary test accuracy:      {test_metrics['accuracy']:.4f}")
-    print(f"Cross-generator accuracy:   {xgen_metrics['accuracy']:.4f}")
-    print(f"Accuracy drop (gen. gap):   {accuracy_drop:.4f}")
-    print(f"Params: {n_params:,} | Train time: {train_time_sec:.1f}s | "
-          f"Inference: {inference_time_per_image * 1000:.2f} ms/image")
-    print(f"Metrics saved to:     {results_dir / 'metrics.csv'}")
-    print(f"Comparison row saved: {comparison_path}")
+    for key, value in (("root", args.data_root), ("manifest", args.manifest)):
+        if value:
+            cfg["data"][key] = value
+    if args.device:
+        cfg["device"] = args.device
+    if args.smoke:
+        cfg.update(smoke=True, run_name=cfg["run_name"] + "_smoke")
+        cfg["train"].update(epochs=1, warmup_epochs=0)
+        cfg["data"].update(batch_size=2, num_workers=0)
+    print(f"Training artifacts: {train(cfg, args.resume)}. Test sets have not been evaluated.")
 
 
 if __name__ == "__main__":

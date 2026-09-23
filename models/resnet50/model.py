@@ -36,7 +36,7 @@ class ResNet50DeeplabHead(nn.Module):
             raise ImportError("torchvision is required for ResNet50.")
 
         weights_enum = ResNet50_Weights[weights] if weights in ResNet50_Weights.__members__ else None
-        self.backbone = resnet50(weights=weights_enum, num_classes=num_classes)
+        self.backbone = resnet50(weights=weights_enum)
         # Replace the FC head with a small MLP + dropout.
         in_features = self.backbone.fc.in_features
         self.backbone.fc = nn.Sequential(
