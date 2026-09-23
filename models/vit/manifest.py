@@ -56,6 +56,48 @@ def read_manifest(path):
     return rows
 
 
+def combine_split_csvs(split_files, output, strip_prefix=""):
+    """Convert A's existing split files to the shared schema; never reassign a row."""
+    if not split_files or not set(split_files).issubset(set(SPLITS) | {"excluded"}):
+        raise ValueError("CSV keys must be train, val, test, cross_gen (and optional excluded).")
+    rows = []
+    prefix = strip_prefix.replace("\\", "/")
+    for split, path in split_files.items():
+        with open(path, newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            if not {"filepath", "label"}.issubset(reader.fieldnames or []):
+                raise ValueError(f"{path} requires filepath and label columns.")
+            for row in reader:
+                if row.get("split") and row["split"] != split:
+                    raise ValueError(f"CSV filename assignment conflicts with row split: {path}")
+                relative = row["filepath"].replace("\\", "/")
+                if prefix:
+                    if not relative.startswith(prefix):
+                        raise ValueError(f"Explicit strip prefix does not match: {relative}")
+                    relative = relative[len(prefix):]
+                # This changes only path notation; source/label are cross-checked.
+                if Path(relative).is_absolute() or ".." in Path(relative).parts:
+                    raise ValueError("CSV paths must be relative; set the exact MEMBER_A_PATH_PREFIX if needed.")
+                _, known_source = source_from_name(relative)
+                rows.append({"filepath": relative, "label": row["label"],
+                             "source": row.get("source") or known_source,
+                             "split": split, "identity": row.get("identity", "")})
+    # Missing cross-generator controls or SD in train/val must be corrected by A.
+    rows = validate_rows(rows)
+    output = Path(output)
+    comparable = lambda entries: [{k: str(row.get(k, "")) for k in FIELDS[:5]} for row in entries]
+    if output.exists():
+        if comparable(read_manifest(output)) != comparable(rows):
+            raise ValueError("Combined manifest already exists with different assignments; choose a new output directory.")
+        return output
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=FIELDS[:5])
+        writer.writeheader()
+        writer.writerows(rows)
+    return output
+
+
 def validate_rows(rows, require_all=True):
     seen, identities, counts = set(), {}, Counter()
     result = []

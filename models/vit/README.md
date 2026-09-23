@@ -20,6 +20,35 @@ Training records the actual package versions, device and CUDA version for each r
 
 ## 2. Member A's handoff
 
+### Kaggle notebook dataset loading
+
+`notebooks/04_vit_crossgen_evaluation.ipynb` now connects the exact dataset with
+`kagglehub.dataset_download("wish096/realvsfake-81k-by-wish")`. Its first cell works
+before repository setup, detects direct/nested Real/Fake directories, and prints
+the resolved path. Manually attaching the same dataset is also supported through
+KaggleHub's resource handling. Enable Internet for initial package/model downloads.
+No credentials are embedded. See the [official KaggleHub API](https://github.com/Kaggle/kagglehub#download-dataset).
+
+Set `DATASET_VERSION` to Member A's integer version and `MEMBER_A_CSV` to the shared
+manifest path, then rerun the first cell. Latest-version loading is for inspection
+only; auditing/training require the pinned version. The manifest describes splits
+of this SAME dataset, not an additional image dataset.
+
+If A already has separate CSV files, set `MEMBER_A_SPLIT_CSVS` instead, with keys
+`train`, `val`, `test`, `cross_gen` (and optional `excluded`). The notebook combines
+them without reassigning rows. Each file needs `filepath,label`; missing source
+metadata is inferred from documented filename prefixes, and existing source labels
+are validated. Set `MEMBER_A_PATH_PREFIX` only to an exact shared prefix to strip
+from old absolute paths. Three-way splits that mix Stable Diffusion into training
+or lack cross-generator real controls must be corrected by A, not silently repaired.
+
+Upload/extract this repository to `/kaggle/working/deepfake-detection`, or use
+`REPO_OVERRIDE`. The local implementation must be uploaded or pushed before Kaggle
+can use it. The notebook generates runtime YAML configs automatically under
+`/kaggle/working/member_c` (or `OUTPUT_OVERRIDE`); do not manually edit the tracked
+team YAML paths for this notebook workflow. Save the output folder before ending
+the session. This connection has local mock coverage, not a live Kaggle/GPU run.
+
 Obtain the images, exact dataset version, fixed splits, preprocessing details,
 and any available identity groups. Labels alone are not enough. A shared cloud
 dataset mount is sufficient; you do not need another full copy on your Mac.
@@ -51,7 +80,7 @@ record a review JSON with `manifest_sha256`, `reviewer`, `rationale`, and
 `decision: "false_positives_only"`; set `data.near_duplicate_review` in each training
 config and `near_duplicate_review` in the evaluation config. Do not bypass review.
 
-Set `data.root` in all training configs and `data_root` in the harness to the
+For the terminal workflow, set `data.root` in all training configs and `data_root` in the harness to the
 actual mount. Set their manifest paths to the SAME audited CSV. Training verifies
 train/validation hashes only; the final evaluator verifies every split.
 

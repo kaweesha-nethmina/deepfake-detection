@@ -4,7 +4,7 @@ Date: 23 September 2026. Branch: feature/kalana.
 
 ## Checked locally
 
-- `python -m pytest -q`: 35 tests passed.
+- `python -m pytest -q`: 45 tests passed after the Kaggle notebook update.
 - Offline forward passes: Custom CNN, ResNet50, EfficientNetV2, ViT-B/16 and ViT+FFT.
 - Synthetic pipeline: audit -> training -> checkpoint freeze -> all-four evaluation -> plot regeneration.
 - Interrupted/resumed CPU training produces identical model parameters to an uninterrupted run.
@@ -13,6 +13,9 @@ Date: 23 September 2026. Branch: feature/kalana.
 - Missing/changed checkpoints, smoke checkpoints, incompatible configs and split leakage fail explicitly.
 - Predictions from the CLI inference helper and evaluator agree; evaluation does not update weights.
 - Notebook schema/cell compilation, command help, dependency consistency and Git whitespace checks pass.
+- Mocked KaggleHub loading requests the exact Wish handle/version and detects direct/nested image roots.
+- Notebook runtime configs share the loaded dataset/manifest without editing tracked team configs.
+- Existing split CSV import preserves assignments, validates source metadata and rejects generator leakage.
 - Generated confusion matrix/ROC and F1 chart layouts were visually inspected using synthetic fixture outputs.
 
 These checks prove software behavior, not detector performance. Synthetic images,

@@ -27,6 +27,7 @@ results/**/*.csv
 results/**/*.json
 results/**/*.pdf
 results/**/*.txt
+results/**/*.yaml
 
 # ---------- Model checkpoints / weights ----------------------
 *.h5
