@@ -1,0 +1,1 @@
+artifacts/vit_wish_s42_ddp2_v1/best_model.pt filter=lfs diff=lfs merge=lfs -text
