@@ -1,52 +1,40 @@
 # Custom CNN — owner: A
-# All paths are variables (yaml anchors / ${ENV}) so local machines never clash.
-# Copy to a personal overrides file if needed: configs/dev_custom_cnn.yaml
+# Shared configuration format used by the team models.
+
+model_name: custom_cnn
 
 # ---- runtime ----
 seed: 42
-deterministic: true
-device: auto            # auto | cpu | cuda | mps
 
-# ---- data (variables, resolved by src.utils.load_config) ----
+# ---- data ----
 data:
-  root: "data/raw"              # <-- override locally, never hardcode in scripts
-  processed_dir: "data/processed"
-  cross_gen_test_dir: "data/cross_gen_test"
-  train_split: 0.80
-  val_split: 0.10
-  test_split: 0.10
-  balance_classes: true
-  face_crop: true               # use src.data_pipeline.crop_and_align
-  augment: true                 # flip, rotate, color-jitter
-  num_workers: 4
+  train_dir: data/processed/train
+  val_dir: data/processed/val
+  test_dir: data/processed/test
+  cross_gen_dir: data/cross_gen_test
 
-# ---- image ----
-image:
-  size: 128                     # squared input for conv net
-  normalize: imagenet           # none | imagenet | cifar-style
+  image_size: 224
+  batch_size: 32
+  num_workers: 4
 
 # ---- model ----
 model:
   name: CustomCNN
+  in_channels: 3
+  num_classes: 2
   base_channels: 32
   num_blocks: 4
   dropout: 0.30
-  num_classes: 2                # real / fake
 
 # ---- training ----
-training:
-  learning_rate: 3.0e-4
-  scheduler: cosine             # cosine | step | none
-  weight_decay: 5.0e-4
-  batch_size: 64
-  epochs: 80
-  mixed_precision: auto
-  early_stopping_patience: 10
+train:
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  epochs: 30
+  early_stopping_patience: 5
+  optimizer: adam
 
-# ---- logging / output ----
-logging:
-  run_name: "custom_cnn_v1"
-  output_dir: "results/custom_cnn"     # outputs go to per-model subfolder only
-  save_checkpoint_last: true
-  save_best: true
-  log_interval: 20
+# ---- output ----
+output:
+  results_dir: results/custom_cnn
+  checkpoint_path: results/custom_cnn/best_model.pt

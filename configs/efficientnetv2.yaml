@@ -1,52 +1,25 @@
-# EfficientNetV2 — owner: B
-# Pretrained MBConv backbone. Same config contract as custom_cnn.yaml.
-
-# ---- runtime ----
+model_name: efficientnetv2
 seed: 42
-deterministic: true
-device: auto
 
-# ---- data (variables, resolved by src.utils.load_config) ----
 data:
-  root: "data/raw"
-  processed_dir: "data/processed"
-  cross_gen_test_dir: "data/cross_gen_test"
-  train_split: 0.80
-  val_split: 0.10
-  test_split: 0.10
-  balance_classes: true
-  face_crop: true
-  augment: true
+  train_dir: data/processed/train
+  val_dir: data/processed/val
+  test_dir: data/processed/test
+  cross_gen_dir: data/cross_gen_test
+  image_size: 224
+  batch_size: 32
   num_workers: 4
 
-# ---- image ----
-image:
-  size: 224                     # EfficientNetV2-S native input
-  normalize: imagenet
+train:
+  warmup_epochs: 8
+  warmup_lr: 0.001
+  finetune_epochs: 15
+  finetune_lr: 0.00001
+  unfreeze_last_n_blocks: 2
+  weight_decay: 0.0001
+  early_stopping_patience: 6
+  optimizer: adam
 
-# ---- model ----
-model:
-  name: EfficientNetV2_S
-  variant: "efficientnetv2_s"   # timm tag (efficientnetv2_m / _l also available)
-  weights: "imagenet"
-  freeze_backbone: false
-  num_classes: 2
-  drop_rate: 0.2
-
-# ---- training ----
-training:
-  learning_rate: 1.0e-4
-  scheduler: cosine
-  weight_decay: 1.0e-4
-  batch_size: 32
-  epochs: 35
-  mixed_precision: auto
-  early_stopping_patience: 8
-
-# ---- logging / output ----
-logging:
-  run_name: "efficientnetv2_v1"
-  output_dir: "results/efficientnetv2"
-  save_checkpoint_last: true
-  save_best: true
-  log_interval: 20
+output:
+  results_dir: results/efficientnetv2
+  checkpoint_path: results/efficientnetv2/best_model.pt

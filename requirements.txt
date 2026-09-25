@@ -4,37 +4,37 @@
 # =============================================================
 
 # --- Deep learning framework ---
-torch==2.2.2
-torchvision==0.17.2
-timm==1.0.7            # ViT, EfficientNetV2, and model zoo (Owner B & C)
-transformers==4.40.2   # ViT (Owner C) — alternative to timm for the transformer path
+torch>=2.6.0
+torchvision>=0.21.0
+timm>=1.0.7
+transformers>=4.40.2
 
 # --- Data / numerical ---
-numpy==1.26.4
-pandas==2.2.2
-PyYAML==6.0.1          # config loading (src.utils.load_config)
+numpy>=1.26.4
+pandas>=2.2.3
+PyYAML>=6.0.2        # config loading (src.utils.load_config)
 
 # --- Image processing / face detection ---
-opencv-python==4.10.0.84   # image IO, face cropping
+opencv-python>=4.10.0.84   # image IO, face cropping
 # mtcnn==0.1.1            # optional: use MTCNN face detection instead of OpenCV DNN
 #               # NOTE: mtcnn pulls tensorflow; prefer opencv DNN/RetinaFace if TF is unwanted
 
 # --- Metrics / ML ---
-scikit-learn==1.4.2        # accuracy, F1, ROC-AUC, calibration
+scikit-learn>=1.5.2       # accuracy, F1, ROC-AUC, calibration
 
 # --- Plotting ---
-matplotlib==3.8.4
-seaborn==0.13.2
+matplotlib>=3.9.2
+seaborn>=0.13.2
 
 # --- Notebooks (owner files only; keep outputs stripped) ---
-jupyter==1.0.0
-ipykernel==6.29.4
-nbformat==5.10.4
+jupyter>=1.0.0
+ipykernel>=6.29.4
+nbformat>=5.10.4
 
 # --- Progress / reproducibility ---
-tqdm==4.66.4
-tensorboard==2.16.2       # optional logging; torch.utils.tensorboard alternative
+tqdm>=4.66.4
+tensorboard>=2.16.2       # optional logging; torch.utils.tensorboard alternative
 
 # --- Style / lint (optional, run before commit) ---
-# black==24.4.2
-# ruff==0.4.4
+# black>=24.4.2
+# ruff>=0.4.4

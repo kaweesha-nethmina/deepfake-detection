@@ -58,6 +58,8 @@ __pycache__/
 # ---------- Environments / tooling ---------------------------
 .venv/
 .venv-gradio/
+.venv311/
+
 venv/
 env/
 ENV/
