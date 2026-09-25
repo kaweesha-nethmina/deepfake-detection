@@ -1,39 +1,16 @@
-# ==============================================================================
-# Config for the cross-generator evaluation HARNESS (models/vit/evaluate_crossgen.py)
-# Owner: Member C
-#
-# This is separate from configs/vit.yaml (which only trains my ViT model).
-# This file just points the harness at each model's own config + checkpoint,
-# so all 4 can be scored with the exact same evaluation code. I don't edit
-# anyone's model.py/config — I only read the checkpoint path they produce.
-#
-# Update each `checkpoint:` path once a teammate has a trained run to compare.
-# ==============================================================================
-
-comparison_dir: "results/comparison"
-
+manifest: data/manifests/wish_v1/manifest.csv
+data_root: data/raw/wish
+near_duplicate_review: null
 models:
   custom_cnn:
-    module: "models.custom_cnn.model"          # must expose build_model(cfg)
-    config: "configs/custom_cnn.yaml"
-    checkpoint: "results/custom_cnn/custom_cnn_v1/checkpoints/best_model.pt"
-
+    config: configs/wish/custom_cnn.yaml
+    checkpoint: results/custom_cnn/custom_cnn_wish_s42_v1/checkpoints/best_model.pt
   resnet50:
-    module: "models.resnet50.model"
-    config: "configs/resnet50.yaml"
-    checkpoint: "results/resnet50/resnet50_v1/checkpoints/best_model.pt"
-
+    config: configs/wish/resnet50.yaml
+    checkpoint: results/resnet50/resnet50_wish_s42_v1/checkpoints/best_model.pt
   efficientnetv2:
-    module: "models.efficientnetv2.model"
-    config: "configs/efficientnetv2.yaml"
-    checkpoint: "results/efficientnetv2/efficientnetv2_v1/checkpoints/best_model.pt"
-
-  vit_b16:                                        # Experiment A
-    module: "models.vit.model"
-    config: "configs/vit.yaml"
-    checkpoint: "results/vit/vit_b16_baseline_v1/checkpoints/best_model.pt"
-
-  vit_freq_hybrid:                                # Experiment B
-    module: "models.vit.model"
-    config: "configs/vit_freq_hybrid.yaml"
-    checkpoint: "results/vit/vit_b16_freq_hybrid_v1/checkpoints/best_model.pt"
+    config: configs/wish/efficientnetv2.yaml
+    checkpoint: results/efficientnetv2/efficientnetv2_wish_s42_v1/checkpoints/best_model.pt
+  vit_b16:
+    config: configs/vit.yaml
+    checkpoint: results/vit/vit_b16_wish_s42_v1/checkpoints/best_model.pt

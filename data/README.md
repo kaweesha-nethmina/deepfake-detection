@@ -1,87 +1,41 @@
-# Data
+# Shared Dataset Contract
 
-**Everything under `data/` is gitignored.** Do not commit datasets, extracted
-frames, or preprocessed crops. Reproduce them from the instructions below so
-every team member shares an identical layout without heavy binaries in history.
+Dataset: [RealVsFake_162k_by_Wish](https://www.kaggle.com/datasets/wish096/realvsfake-81k-by-wish).
+Use the same Kaggle dataset version as Member A. The owner reports 81,000 real,
+70,000 StyleGAN, 9,971 Stable Diffusion and 1,001 other AI images. These are
+publisher counts, not verified local counts. Record original FFHQ/CelebA provenance
+and applicable source terms; the aggregator's CC0 label alone is not a complete
+license audit. Cite source datasets and pretrained weights in the report.
 
-## Directory layout (convention — do not change without a team-wide note)
+Images are described as already-cropped 299x299 faces. Do not independently
+recrop ViT data. All models use the shared crops resized to 224x224 with their
+checkpoint's normalization. Source is encoded in basenames, NOT generator folders:
 
-```
-data/
-├── raw/                  # downloaded sources, untouched
-│   ├── real/             #       +-----------+-----------------+
-│   └── fake/<generator>/ # e.g.  | StyleGAN2  | ProgressiveGAN  |
-├── processed/            # face-cropped + resized, ready for training
-└── cross_gen_test/       # held-out generators used by Owner C's eval
-    └── <unseen-generator>/
-```
+| Prefix | Source column | Label | Allowed split |
+|---|---|---:|---|
+| RFF | FFHQ | 0 | train, val, test, cross_gen |
+| RCA | CelebA | 0 | train, val, test, cross_gen |
+| FSG | StyleGAN | 1 | train, val, test |
+| FSD | StableDiffusion | 1 | cross_gen only |
+| AI | AiGenImage | 1 | excluded only |
 
-Production rule: **do not delete/reorder files between splits while training is
-running.** Use `src.data_pipeline.balanced_split(seed=same)` so everyone computes
-the same partition.
+Member A supplies a UTF-8 CSV containing `filepath,label,source,split` and optional
+`identity`. Keep original names such as `Fake/FSG (123).jpg`. Paths must be
+relative to the image root, not machine-specific Kaggle paths. If A has four CSVs,
+combine rows with their existing assignments; never run a new random split.
 
-## Datasets (pick per hardware budget; cite what you use)
+Every active split must contain real and fake examples. Use distinct real controls
+for the two tests. Do not drain the primary real test set to balance the cross test.
+Inspect balance/source composition in audit.json; balance is reported, not silently
+repaired. SD in training, missing real controls, duplicates or wrong labels require
+Member A to correct one manifest for the entire team BEFORE any final experiment.
 
-| Dataset | Generator(s) | Fakes | Reals | Notes / link |
-|---|---|---|---|---|
-| **CelebA-HQ / StyleGAN2** | StyleGAN2 | 5 k | 5 k | High-res; good *closed* train set. |
-| **FFHQ (real split)** | — | — | 70 k | Clean real faces; pairs well with StyleGAN2 fakes. |
-| **DeepFakeFaceForensics (DFFF)** | IDs/GANs/LatentDiffusion | 100 k | 100 k | Large cross-generator diversity — best for the *cross-gen* question. |
-| **FaceForensics++ (FF++)** | Deepfakes / FaceSwap / ... | 4 k | 1 k | Classical manipulation; useful as *unseen* test set. |
-| **CIFAKE** | GenImage (LDM) | 120 k | 120 k | Easy to download, small images, fine for Custom CNN (Owner A). |
+See [the runnable audit/training workflow](../models/vit/README.md). It adds content
+and pixel hashes and dHash review candidates without changing split assignments.
+Exact duplicates are rejected even within a split to avoid inflated sample counts.
+Identity IDs are source-qualified; when metadata is unavailable, document that
+identity-disjointness across FFHQ/CelebA cannot be established by filename/hash checks.
 
-> Recommended pairing for the SE4050 experiment:
-> * **Train / val** on StyleGAN2 fakes + FFHQ(real) from **CelebA-HQ**.
-> * **In-distribution test** from the same train distribution.
-> * **Cross-generator test** (`data/cross_gen_test/`) on **ProGAN**, **StyleGAN3**
->   and **Latent Diffusion (LDM)** fakes that were never seen during training.
-
-## How to download
-
-Prefer scripted downloads. Add one script per dataset in `scripts/download_*`
-or a notebook, and record the *exact* URL + checksum here so anyone can re-pull:
-
-- **CelebA-HQ (1024×1024)**: `https://drive.google.com/...` (authorization needed)
-  - mirror via `kagglehub`/`huggingface_hub` when available.
-- **FFHQ**: click-through licence, then `https://github.com/NVlabs/ffhq-dataset` →
-  `ffhq-dataset-v2` images `00000-69999`.
-- **DFFF**: `https://huggingface.co/datasets/...` (see dataset card).
-- **FF++**: `https://github.com/ondyari/FaceForensics` (c20 / raw).
-
-If a mirror requires a Kaggle login, put the *command* here rather than copying
-data, e.g.:
-
-```bash
-kaggle datasets download -d $OWNER/$DATASET -p data/raw && unzip -q \
-  "$(find data/raw -name '*.zip' | head -1)" -d data/raw
-```
-
-If you use an **open-license U-Net/quantized** mirror for CIFAKE, note the
-checksum after downloading in this file. Keep the *layer* of the data (raw vs
-processed) explicit so no one uploads a 5 GB zip to GitHub by accident.
-
-## Post-download steps
-
-1. Convert everything to RGB and, if needed, split by generator:
-   ```python
-   from src.data_pipeline import build_dataset_paths
-   build_dataset_paths("data/raw")          # ensures processed/, cross_gen_test/
-   ```
-2. Owner A: add `scripts/make_processed.py` (additive, in your branch) that reads
-   `raw/` and writes crops into `processed/`. Do **not** overwrite other members'
-   copies of raw data.
-3. Sanity check counts and generator labels before agreeing on a frozen test set.
-
-## Citations
-
-When you include one of these datasets in the final report, add its BibTeX here
-so the report section writes itself:
-
-```bibtex
-@inproceedings{karras2020stylegan,
-  title={Analyzing and Improving the Image Quality of StyleGAN},
-  author={Karras, Tero and Laine, Samuli and Aittala, Miika and ...},
-  booktitle={CVPR}, year={2020}}
-```
-
-*(Add entries as you finalize which datasets made the cut.)*
+Raw images, extracted archives, audited manifests, review files and checkpoints
+stay out of Git. Share them through the team's approved storage. Never commit
+Kaggle API credentials. The manifests are portable across Mac and GPU mounts.

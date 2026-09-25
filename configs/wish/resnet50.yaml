@@ -1,0 +1,28 @@
+model_name: resnet50
+module: models.resnet50.model
+run_name: resnet50_wish_s42_v1
+seed: 42
+device: auto
+data:
+  root: data/raw/wish
+  manifest: data/manifests/wish_v1/manifest.csv
+  near_duplicate_review: null
+  batch_size: 16
+  num_workers: 2
+model:
+  num_classes: 2
+  weights: IMAGENET1K_V1
+  drop_rate: 0.1
+train:
+  epochs: 30
+  early_stopping_patience: 6
+  optimizer: adam
+  warmup_epochs: 8
+  warmup_lr: 0.001
+  lr: 0.00001
+  weight_decay: 0.0001
+  effective_batch_size: 32
+  grad_clip_norm: 1.0
+  mixed_precision: true
+output:
+  results_dir: results/resnet50

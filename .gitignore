@@ -13,6 +13,11 @@ data/cross_gen_test/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/cross_gen_test/.gitkeep
+data/manifests/*
+.pytest_cache/
+.cache/
+results/**/*.tmp
+results/**/*.log
 
 # ---------- Results / generated artifacts --------------------
 # Folder structure is tracked via .gitkeep; contents excluded.
@@ -23,6 +28,7 @@ results/**/*.csv
 results/**/*.json
 results/**/*.pdf
 results/**/*.txt
+results/**/*.yaml
 
 # ---------- Model checkpoints / weights ----------------------
 *.h5
@@ -35,6 +41,7 @@ results/**/*.txt
 *.joblib
 checkpoints/
 trained_models/
+!artifacts/vit_wish_s42_ddp2_v1/best_model.pt
 
 # ---------- Python bytecode / caches -------------------------
 __pycache__/
@@ -50,6 +57,7 @@ __pycache__/
 
 # ---------- Environments / tooling ---------------------------
 .venv/
+.venv-gradio/
 .venv311/
 
 venv/

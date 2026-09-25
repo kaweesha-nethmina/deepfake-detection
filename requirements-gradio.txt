@@ -1,0 +1,9 @@
+# Install the torch/torchvision pair appropriate to your machine first.
+torch>=2.6
+torchvision>=0.21
+timm==1.0.30
+numpy>=1.26.4
+Pillow>=10
+PyYAML>=6
+gradio==6.28.0
+opencv-python-headless==4.11.0.86
