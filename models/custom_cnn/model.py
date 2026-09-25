@@ -84,6 +84,18 @@ class CustomCNN(nn.Module):
         return self.head(x)
 
 
+def get_model(num_classes: int = 2) -> nn.Module:
+    """Factory used by demo_app.py — mirrors the default config architecture."""
+    return CustomCNN(
+        in_channels=3,
+        num_classes=num_classes,
+        base_channels=32,
+        num_blocks=4,
+        dropout=0.3,
+        spatial_input=128,
+    )
+
+
 def build_model(cfg: dict) -> nn.Module:
     """Factory used by train.py — reads only the ``model:`` block of the yaml."""
     m = cfg.get("model", {})

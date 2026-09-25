@@ -44,7 +44,7 @@ MODEL_REGISTRY = {
     "Custom CNN": {
         "config": "configs/custom_cnn.yaml",
         "import_path": "models.custom_cnn.model",
-        "gradcam_layer": "features.4.block.0",
+        "gradcam_layer": "features.24",
         "default_checkpoint": "results/custom_cnn/best_model.pt",
     },
 
