@@ -1,0 +1,51 @@
+# ==============================================================================
+# Config for models/vit/prepare_data.py
+# Owner: Member C
+#
+# Implements the strict experimental protocol:
+#   - StyleGAN  -> train / validation / primary test (70/15/15, stratified)
+#   - Stable Diffusion -> cross-generator test ONLY (never touched otherwise)
+#
+# IMPORTANT: `label_rules` / `generator_rules` are keyword matches against the
+# lower-cased relative file path under `raw_dir`. The exact folder layout of
+# the downloaded Kaggle dataset was NOT independently verified when this
+# config was written — confirm it against what you actually download, and
+# add/adjust keywords so every file gets classified correctly. The script
+# will print any file it could NOT classify so nothing is silently dropped.
+# Tested end-to-end against a synthetic dataset with this same folder shape
+# (real/<source>/*.jpg, fake/stylegan/*.jpg, fake/stable_diffusion/*.jpg) —
+# adjust the keywords below if the real Kaggle download differs.
+# ==============================================================================
+
+seed: 42
+
+raw_dir: "data/raw/realvsfake"          # where you extract the Kaggle download
+processed_dir: "data/processed"          # -> train/, val/, test/  (StyleGAN experiment)
+cross_gen_dir: "data/cross_gen_test"     # -> Stable Diffusion holdout, never used for training
+
+link_mode: "symlink"                     # "symlink" (default, fast, no duplication) or "copy"
+
+split:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+
+# First matching rule wins. Order matters — put more specific keywords first.
+label_rules:
+  - {keyword: "real", label: "real"}
+  - {keyword: "fake", label: "fake"}
+
+generator_rules:
+  - {keyword: "stylegan", generator: "stylegan"}
+  - {keyword: "stable_diffusion", generator: "stable_diffusion"}
+  - {keyword: "stablediffusion", generator: "stable_diffusion"}
+  - {keyword: "sdxl", generator: "stable_diffusion"}
+  - {keyword: "diffusion", generator: "stable_diffusion"}
+  # anything real (no generator) or unmatched fake falls into "other" —
+  # "other"-generator fakes are EXCLUDED from both experiment pools by default
+  # (see prepare_data.py) so the main experiment stays exactly StyleGAN -> Stable Diffusion.
+
+output:
+  verification_report: "results/vit/dataset_verification_report.json"
+  summary_table: "results/comparison/dataset_summary_table.csv"
+  leakage_report: "results/vit/dataset_leakage_report.json"
