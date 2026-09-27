@@ -24,6 +24,7 @@ cropping/stretching and keeps the inference preprocessing consistent.
 
 import io
 import os
+import copy
 import importlib
 
 import numpy as np
@@ -45,6 +46,7 @@ MODEL_REGISTRY = {
         "config": "configs/custom_cnn.yaml",
         "import_path": "models.custom_cnn.model",
         "gradcam_layer": "features.4.block.0",
+        "gradcam_mode": "conv",
         "default_checkpoint": "results/custom_cnn/best_model.pt",
     },
 
@@ -52,6 +54,7 @@ MODEL_REGISTRY = {
         "config": "configs/resnet50.yaml",
         "import_path": "models.resnet50.model",
         "gradcam_layer": "layer4.2.conv3",
+        "gradcam_mode": "conv",
         "default_checkpoint": "results/resnet50/best_model.pt",
     },
 
@@ -59,13 +62,15 @@ MODEL_REGISTRY = {
         "config": "configs/efficientnetv2.yaml",
         "import_path": "models.efficientnetv2.model",
         "gradcam_layer": "features.7.0",
+        "gradcam_mode": "conv",
         "default_checkpoint": "results/efficientnetv2/best_model.pt",
     },
 
     "ViT (frequency-hybrid)": {
         "config": "configs/vit.yaml",
         "import_path": "models.vit.model",
-        "gradcam_layer": None,
+        "gradcam_layer": "backbone.norm",
+        "gradcam_mode": "token",
         "default_checkpoint": "results/vit/best_model.pt",
     },
 }
@@ -179,37 +184,33 @@ def load_model(display_name: str):
 
     module = importlib.import_module(info["import_path"])
 
-    # --------------------------------------------------------
-    # ViT
-    # --------------------------------------------------------
+    model_cfg = cfg.get("model", {})
+    num_classes = int(model_cfg.get("num_classes", 2))
 
-    if display_name == "ViT (frequency-hybrid)":
+    # Teammates expose two factory conventions:
+    #   * build_model(cfg)              -> custom_cnn, vit
+    #   * get_model(num_classes=...)    -> resnet50, efficientnetv2
+    # Support both so the registry stays the single source of truth.
 
-        model_cfg = cfg.get("model", {})
+    if hasattr(module, "build_model"):
 
-        use_freq = model_cfg.get(
-            "use_frequency_branch",
-            True,
-        )
+        build_cfg = copy.deepcopy(cfg)
 
-        backbone = model_cfg.get(
-            "vit_backbone",
-            "vit_base_patch16_224",
-        )
+        # The checkpoint is about to overwrite every weight, so skip the
+        # timm pretrained download and build from scratch instead.
+        if "pretrained" in build_cfg.get("model", {}):
+            build_cfg["model"]["pretrained"] = False
 
-        model = module.get_model(
-            backbone_name=backbone,
-            use_frequency_branch=use_freq,
-        )
+        model = module.build_model(build_cfg)
 
-    # --------------------------------------------------------
-    # CNN MODELS
-    # --------------------------------------------------------
+    elif hasattr(module, "get_model"):
+
+        model = module.get_model(num_classes=num_classes)
 
     else:
 
-        model = module.get_model(
-            num_classes=2
+        raise AttributeError(
+            f"{info['import_path']} exposes neither build_model nor get_model."
         )
 
     device = get_device()
@@ -217,7 +218,16 @@ def load_model(display_name: str):
     state_dict = torch.load(
         ckpt_path,
         map_location=device,
+        weights_only=True,
     )
+
+    # ViT checkpoints wrap the weights alongside metadata; the CNN
+    # checkpoints are a bare state_dict.
+    if isinstance(state_dict, dict):
+        state_dict = state_dict.get(
+            "model_state",
+            state_dict.get("state_dict", state_dict),
+        )
 
     model.load_state_dict(state_dict)
 
@@ -676,6 +686,40 @@ def denormalize_for_display(
 # GRAD-CAM
 # ============================================================
 
+def resolve_gradcam_target(
+    model: torch.nn.Module,
+    configured,
+):
+    """
+    Return a Grad-CAM target layer name that actually exists on the model.
+
+    The configured path is used when valid. Otherwise fall back to the last
+    Conv2d, which is the standard Grad-CAM tap point. This keeps the registry
+    entry from silently breaking when a backbone reshuffles its module tree
+    (CustomCNN's stem is a flat nn.Sequential, so the index moves with
+    num_blocks).
+    """
+
+    if configured is None:
+        return None
+
+    modules = dict(
+        model.named_modules()
+    )
+
+    if configured in modules:
+        return configured
+
+    last_conv = None
+
+    for name, module in modules.items():
+
+        if isinstance(module, torch.nn.Conv2d):
+            last_conv = name
+
+    return last_conv
+
+
 class GradCAM:
     """
     Minimal Grad-CAM implementation.
@@ -814,6 +858,132 @@ class GradCAM:
         return cam
 
 
+class TokenGradCAM:
+    """
+    Grad-CAM for transformer backbones.
+
+    The convolutional Grad-CAM above assumes a 4D NCHW activation. A ViT
+    instead emits a 3D token sequence (B, num_tokens, channels), so the
+    channel weights are averaged over tokens and the patch tokens are
+    reassembled into their 2D grid before upsampling. Prefix tokens (CLS,
+    register tokens) carry no spatial meaning and are dropped.
+    """
+
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        target_layer_name: str,
+        num_prefix_tokens: int = 1,
+        grid_size=None,
+    ):
+        self.model = model
+        self.num_prefix_tokens = num_prefix_tokens
+        self.grid_size = grid_size
+        self.activations = None
+        self.gradients = None
+
+        modules = dict(model.named_modules())
+
+        if target_layer_name not in modules:
+            raise ValueError(
+                f"Grad-CAM layer not found: {target_layer_name}"
+            )
+
+        layer = modules[target_layer_name]
+
+        layer.register_forward_hook(self._save_activation)
+        layer.register_full_backward_hook(self._save_gradient)
+
+    def _save_activation(self, module, inp, out):
+        self.activations = out.detach()
+
+    def _save_gradient(self, module, grad_in, grad_out):
+        self.gradients = grad_out[0].detach()
+
+    def _resolve_grid(self, num_patches: int) -> tuple:
+        if self.grid_size is not None:
+            return tuple(self.grid_size)
+
+        side = int(round(num_patches**0.5))
+
+        if side * side != num_patches:
+            raise ValueError(
+                f"Cannot reshape {num_patches} patch tokens "
+                f"into a square grid."
+            )
+
+        return side, side
+
+    def __call__(
+        self,
+        input_tensor: torch.Tensor,
+        class_idx: int,
+    ) -> np.ndarray:
+        self.model.zero_grad(set_to_none=True)
+
+        output = self.model(input_tensor)
+
+        # Single-logit heads collapse to (B,), so there is no class axis.
+        score = (
+            output[0]
+            if output.ndim == 1
+            else output[0, class_idx]
+        )
+
+        score.backward()
+
+        if self.gradients is None:
+            raise RuntimeError("Gradients were not captured.")
+
+        if self.activations is None:
+            raise RuntimeError("Activations were not captured.")
+
+        if self.activations.ndim != 3:
+            raise ValueError(
+                f"TokenGradCAM expects a 3D token activation, got "
+                f"shape {tuple(self.activations.shape)}."
+            )
+
+        # (B, T, C) -> channel weights averaged over tokens
+        weights = self.gradients.mean(dim=1, keepdim=True)
+
+        cam = (
+            weights * self.activations
+        ).sum(dim=2)  # (B, T)
+
+        # No ReLU here. Transformer activations come out of a LayerNorm, so
+        # the weighted sum is frequently uniformly signed -- applying ReLU
+        # blanks the map entirely. The signed map is min-max normalised
+        # below instead, showing which patches drive the chosen class.
+
+        cam = cam[:, self.num_prefix_tokens:]
+
+        height, width = self._resolve_grid(cam.shape[1])
+
+        cam = cam.reshape(
+            cam.shape[0], 1, height, width
+        )
+
+        cam = F.interpolate(
+            cam,
+            size=input_tensor.shape[-2:],
+            mode="bilinear",
+            align_corners=False,
+        )
+
+        cam = cam.squeeze().detach().cpu().numpy()
+
+        cam_min = cam.min()
+        cam_max = cam.max()
+
+        if cam_max - cam_min > 1e-8:
+            cam = (cam - cam_min) / (cam_max - cam_min)
+        else:
+            cam = np.zeros_like(cam)
+
+        return cam
+
+
 def overlay_heatmap(
     base_img: np.ndarray,
     cam: np.ndarray,
@@ -920,15 +1090,31 @@ def run_inference(
             input_tensor
         )
 
-        probs = (
-            F.softmax(
-                logits,
-                dim=1,
+        # The CNN backbones emit (B, 2) logits; the ViT is trained with a
+        # single logit (num_classes: 1) and collapses to shape (B,).
+        if logits.ndim == 1 or logits.shape[-1] == 1:
+
+            p_fake = float(
+                torch.sigmoid(
+                    logits.squeeze()
+                )
+                .cpu()
             )
-            .squeeze()
-            .cpu()
-            .numpy()
-        )
+
+            # Checkpoint label mapping is real=0, fake=1.
+            probs = np.array([1.0 - p_fake, p_fake])
+
+        else:
+
+            probs = (
+                F.softmax(
+                    logits,
+                    dim=1,
+                )
+                .squeeze()
+                .cpu()
+                .numpy()
+            )
 
     pred_idx = int(
         probs.argmax()
@@ -973,17 +1159,17 @@ def run_inference(
     # Grad-CAM
     # --------------------------------------------------------
 
-    gradcam_layer = (
-        MODEL_REGISTRY[
-            display_name
-        ]["gradcam_layer"]
+    gradcam_info = MODEL_REGISTRY[display_name]
+
+    gradcam_layer = resolve_gradcam_target(
+        model,
+        gradcam_info["gradcam_layer"],
     )
 
     if gradcam_layer is None:
 
         st.caption(
-            "Grad-CAM not shown for ViT "
-            "(attention-based model)."
+            "Grad-CAM not available for this model."
         )
 
         return
@@ -996,10 +1182,37 @@ def run_inference(
             .requires_grad_(True)
         )
 
-        cam = GradCAM(
-            model,
-            gradcam_layer,
-        )
+        if gradcam_info.get("gradcam_mode") == "token":
+
+            backbone = getattr(
+                model, "backbone", model
+            )
+
+            cam = TokenGradCAM(
+                model,
+                gradcam_layer,
+                num_prefix_tokens=getattr(
+                    backbone,
+                    "num_prefix_tokens",
+                    1,
+                ),
+                grid_size=getattr(
+                    getattr(
+                        backbone,
+                        "patch_embed",
+                        None,
+                    ),
+                    "grid_size",
+                    None,
+                ),
+            )
+
+        else:
+
+            cam = GradCAM(
+                model,
+                gradcam_layer,
+            )
 
         heatmap = cam(
             cam_input,
