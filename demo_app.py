@@ -33,6 +33,9 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 
+from models.vit.runtime import (load_checkpoint as load_vit_checkpoint,
+                                probabilities as vit_probabilities,
+                                transform_for as vit_transform_for)
 from src.data_pipeline import IMAGENET_MEAN, IMAGENET_STD, build_transforms
 from src.utils import get_device, load_config
 
@@ -77,6 +80,7 @@ MODEL_REGISTRY = {
 
 
 CLASS_NAMES = ["REAL", "FAKE"]
+VIT_METADATA_KEY = "_checkpoint_metadata"
 
 
 # ============================================================
@@ -163,6 +167,36 @@ def resolve_image_size(cfg: dict, default: int = 224) -> int:
     return default
 
 
+def is_vit_model(display_name: str) -> bool:
+    """
+    Identify the ViT entry without changing the UI-facing model label.
+    """
+
+    return (
+        MODEL_REGISTRY[display_name]["import_path"]
+        == "models.vit.model"
+    )
+
+
+def validate_vit_metadata(metadata: dict):
+    """
+    The Streamlit ViT path must use the same trained checkpoint contract as
+    the working Gradio app: plain ViT-B/16, real=0, fake=1, threshold 0.5.
+    """
+
+    if metadata.get("module") != "models.vit.model":
+        raise ValueError("ViT checkpoint metadata has the wrong module.")
+
+    if metadata.get("model_name") != "vit_b16":
+        raise ValueError("Expected the trained plain ViT-B/16 checkpoint.")
+
+    if metadata.get("label_mapping") != {"real": 0, "fake": 1}:
+        raise ValueError("ViT checkpoint must declare real=0 and fake=1.")
+
+    if float(metadata.get("threshold", -1)) != 0.5:
+        raise ValueError("ViT checkpoint threshold must be 0.5.")
+
+
 # ============================================================
 # MODEL LOADING
 # ============================================================
@@ -181,6 +215,23 @@ def load_model(display_name: str):
 
     if not os.path.exists(ckpt_path):
         return None, None, cfg
+
+    device = get_device()
+
+    if is_vit_model(display_name):
+
+        model, metadata = load_vit_checkpoint(
+            cfg,
+            ckpt_path,
+            device,
+        )
+
+        validate_vit_metadata(metadata)
+
+        cfg = copy.deepcopy(cfg)
+        cfg[VIT_METADATA_KEY] = metadata
+
+        return model, device, cfg
 
     module = importlib.import_module(info["import_path"])
 
@@ -212,8 +263,6 @@ def load_model(display_name: str):
         raise AttributeError(
             f"{info['import_path']} exposes neither build_model nor get_model."
         )
-
-    device = get_device()
 
     state_dict = torch.load(
         ckpt_path,
@@ -1071,14 +1120,30 @@ def run_inference(
     # Preprocessing
     # --------------------------------------------------------
 
-    image_size = resolve_image_size(
-        cfg
-    )
+    vit_metadata = cfg.get(VIT_METADATA_KEY)
 
-    input_tensor = preprocess(
-        image,
-        image_size=image_size,
-    ).to(device)
+    if vit_metadata is not None:
+
+        input_tensor = (
+            vit_transform_for(
+                vit_metadata["preprocessing"]
+            )(
+                image
+            )
+            .unsqueeze(0)
+            .to(device)
+        )
+
+    else:
+
+        image_size = resolve_image_size(
+            cfg
+        )
+
+        input_tensor = preprocess(
+            image,
+            image_size=image_size,
+        ).to(device)
 
     # --------------------------------------------------------
     # Prediction
@@ -1090,18 +1155,12 @@ def run_inference(
             input_tensor
         )
 
-        # The CNN backbones emit (B, 2) logits; the ViT is trained with a
-        # single logit (num_classes: 1) and collapses to shape (B,).
-        if logits.ndim == 1 or logits.shape[-1] == 1:
+        if vit_metadata is not None:
 
             p_fake = float(
-                torch.sigmoid(
-                    logits.squeeze()
-                )
-                .cpu()
+                vit_probabilities(logits)[0].cpu()
             )
 
-            # Checkpoint label mapping is real=0, fake=1.
             probs = np.array([1.0 - p_fake, p_fake])
 
         else:
@@ -1116,9 +1175,17 @@ def run_inference(
                 .numpy()
             )
 
-    pred_idx = int(
-        probs.argmax()
-    )
+    if vit_metadata is not None:
+
+        pred_idx = int(
+            probs[1] >= float(vit_metadata["threshold"])
+        )
+
+    else:
+
+        pred_idx = int(
+            probs.argmax()
+        )
 
     pred_label = (
         CLASS_NAMES[pred_idx]
