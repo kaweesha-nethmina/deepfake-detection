@@ -1,0 +1,628 @@
+{
+  "schema_version": "1.0",
+  "report_type": "training_validation_model_card",
+  "format_note": "Project-specific evidence schema; not a claimed proprietary OpenCodeGen schema.",
+  "generated_at_utc": "2026-09-27T05:41:59.767174+00:00",
+  "run_name": "vit_wish_s42_ddp2_v1",
+  "scope": "Recorded training and validation evidence, not final held-out test evaluation",
+  "metric_units": "Fractions in [0,1] unless named seconds, bytes, images_per_second or percentage_points; BCE/MCC are not percentages",
+  "metric_definition": {
+    "positive_class": "fake",
+    "positive_label": 1,
+    "threshold": 0.5,
+    "precision_recall_f1_averaging": "binary",
+    "average_precision": "AP, not trapezoidal PR-AUC"
+  },
+  "model": {
+    "architecture": "ViT-B/16",
+    "backbone": "vit_base_patch16_224.augreg_in21k_ft_in1k",
+    "pretraining_recipe": "ImageNet-21k pretrained, then ImageNet-1k fine-tuned, then Wish fine-tuned",
+    "frequency_branch": false,
+    "parameters": 85799425,
+    "trainable_parameters": 85799425,
+    "preprocessing": {
+      "image_size": 224,
+      "mean": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "std": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "interpolation": "bicubic",
+      "color": "RGB",
+      "resize": "square",
+      "crop": "already_cropped_wish_faces"
+    }
+  },
+  "data": {
+    "dataset": "wish096/realvsfake-81k-by-wish",
+    "manifest_sha256_recorded": "2c0a6ff549eab6568ff35552d08c47a7a00eb0bd8e2bb82e1775a946056f1492",
+    "dataset_version_recorded": "content-sha256:89612e195edc71ace7cc953d87e9184b4e31609dd24915d2625ab548b6fced9e",
+    "manifest_supplied": false,
+    "audit_supplied": false,
+    "split_counts": null,
+    "identity_independence_verified": false,
+    "protocol_from_code": {
+      "train_validation_primary": [
+        "FFHQ",
+        "CelebA",
+        "StyleGAN"
+      ],
+      "cross_generator": [
+        "separate real controls",
+        "StableDiffusion"
+      ],
+      "excluded_source": "AiGenImage"
+    },
+    "limitation": "Protocol inspected in supplied code; split membership/leakage cannot be independently checked without manifest and audit."
+  },
+  "training": {
+    "status": "completed",
+    "epochs_completed": 7,
+    "maximum_epochs": 30,
+    "best_epoch": 1,
+    "selection_criterion": "validation_loss",
+    "early_stopping_patience": 6,
+    "stop_reason": "early_stopping_inferred_from_history_and_training_code",
+    "epochs_without_improvement_after_best": 6,
+    "seed": 42,
+    "optimizer": "adamw",
+    "learning_rate_target": 3e-05,
+    "weight_decay": 0.01,
+    "warmup_fraction": 0.1,
+    "scheduler": "linear_warmup_then_decay",
+    "gradient_clip_norm": 1.0,
+    "mixed_precision": true,
+    "world_size": 2,
+    "microbatch_per_gpu": 16,
+    "effective_batch_size": 32,
+    "accumulation_steps": 1
+  },
+  "metrics": {
+    "validation_at_selected_checkpoint": {
+      "bce_loss": 0.003322627783186843,
+      "accuracy": 0.9988450655425305,
+      "precision": 0.9989801121876594,
+      "recall": 0.9984709480122325,
+      "f1_score": 0.9987254652052001,
+      "roc_auc": 0.9999934802540916,
+      "average_precision": 0.9999921701148715,
+      "balanced_accuracy": 0.998813042915188,
+      "specificity": 0.9991551378181435,
+      "mcc": 0.9976697189774488,
+      "false_positive_rate": 0.0008448621818565316,
+      "false_negative_rate": 0.001529051987767538
+    },
+    "training_online_during_selected_epoch": {
+      "bce_loss": 0.138305229677535,
+      "accuracy": 0.9384628710727234,
+      "precision": 0.9263220279626088,
+      "recall": 0.9388925294888598,
+      "f1_score": 0.9325649196555699,
+      "roc_auc": 0.9891246169337297,
+      "average_precision": 0.9872685569918206,
+      "balanced_accuracy": 0.9384996490708459,
+      "specificity": 0.9381067686528322,
+      "mcc": 0.876049052394515,
+      "false_positive_rate": 0.06189323134716784,
+      "false_negative_rate": 0.06110747051114018
+    },
+    "validation_at_last_epoch": {
+      "bce_loss": 0.007883834083401228,
+      "accuracy": 0.9980366114223018,
+      "precision": 0.9992333248147202,
+      "recall": 0.9964322120285423,
+      "f1_score": 0.9978308026030369,
+      "roc_auc": 0.9999852784271955,
+      "average_precision": 0.9999824269741902,
+      "balanced_accuracy": 0.9978992826960749,
+      "specificity": 0.9993663533636076,
+      "mcc": 0.9960408339762756,
+      "false_positive_rate": 0.0006336466363924265,
+      "false_negative_rate": 0.0035677879714577365
+    },
+    "training_online_during_last_epoch": {
+      "bce_loss": 0.023547514051464137,
+      "accuracy": 0.9944687117171742,
+      "precision": 0.9933182425614313,
+      "recall": 0.9944844910441241,
+      "f1_score": 0.9939010246824304,
+      "roc_auc": 0.9997840028634697,
+      "average_precision": 0.999738483978123,
+      "balanced_accuracy": 0.9944700623995655,
+      "specificity": 0.9944556337550069,
+      "mcc": 0.9888413157440272,
+      "false_positive_rate": 0.005544366244993104,
+      "false_negative_rate": 0.005515508955875936
+    }
+  },
+  "metrics_provenance": "Copied from recorded epoch history; not independently recomputed from per-image predictions. Training metrics are online augmented-batch metrics, not fixed-checkpoint train-set evaluation.",
+  "efficiency": {
+    "recorded_training_validation_seconds": 3598.02585191,
+    "recorded_time_scope": "Sum of epoch train/validation calls; excludes dataset audit, cache build, setup, most checkpoint/plot writing and demo.",
+    "epoch_seconds": [
+      519.617897097,
+      512.693847515,
+      514.9114473529999,
+      514.8464224479999,
+      513.508382775,
+      512.4352885639996,
+      510.0125661580005
+    ],
+    "mean_epoch_seconds": 514.00369313,
+    "recorded_train_images_per_second_mean": 166.15348500198508,
+    "recorded_train_images_per_second_range": [
+      164.31028426528206,
+      167.4579120928277
+    ],
+    "throughput_caveat": "Trainer-reported throughput; not a controlled synchronized benchmark or inference latency.",
+    "inference_ms_per_image": null,
+    "peak_gpu_memory_bytes": null,
+    "single_gpu_speedup": null,
+    "gpu_model_verified": null
+  },
+  "checkpoint": {
+    "file": "checkpoints/best_model.pt",
+    "sha256": "be78ec4969aaf73dc82918f6c9aa794e6d196287920d1957c511106f458a452c",
+    "size_bytes": 343260201,
+    "metadata": {
+      "model_name": "vit_b16",
+      "run_name": "vit_wish_s42_ddp2_v1",
+      "manifest_sha256": "2c0a6ff549eab6568ff35552d08c47a7a00eb0bd8e2bb82e1775a946056f1492",
+      "dataset_version": "content-sha256:89612e195edc71ace7cc953d87e9184b4e31609dd24915d2625ab548b6fced9e",
+      "preprocessing": {
+        "image_size": 224,
+        "mean": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "std": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "interpolation": "bicubic",
+        "color": "RGB",
+        "resize": "square",
+        "crop": "already_cropped_wish_faces"
+      },
+      "label_mapping": {
+        "real": 0,
+        "fake": 1
+      },
+      "threshold": 0.5,
+      "selection": "validation_loss",
+      "smoke": false,
+      "model_config": {
+        "backbone": "vit_base_patch16_224.augreg_in21k_ft_in1k",
+        "pretrained": true,
+        "num_classes": 1,
+        "dropout": 0.1,
+        "use_frequency_hybrid": false
+      },
+      "module": "models.vit.model",
+      "seed": 42,
+      "world_size": 2,
+      "training_time_seconds": 3598.02585191,
+      "total_parameters": 85799425,
+      "trainable_parameters": 85799425,
+      "best_epoch": 1
+    }
+  },
+  "gradio_self_test": {
+    "status": "reported_pass",
+    "evidence": {
+      "images": 36,
+      "labelled_images": 36,
+      "real_images": 24,
+      "fake_images": 12,
+      "accuracy_on_real_images": 1.0,
+      "accuracy_on_fake_images": 1.0,
+      "accuracy": 1.0,
+      "accuracy_by_source": {
+        "CelebA": 1.0,
+        "FFHQ": 1.0,
+        "StyleGAN": 1.0
+      },
+      "predicted_fake": 12,
+      "predicted_real": 24,
+      "single_image_endpoint_matches_model": true,
+      "batch_endpoint_matches_model": true,
+      "splits_used": [
+        "val"
+      ],
+      "sealed_evaluation_complete": false,
+      "run": {
+        "run_name": "vit_wish_s42_ddp2_v1",
+        "best_epoch": 1,
+        "epochs_recorded": 7,
+        "planned_epochs": 30,
+        "training_complete": true,
+        "val_accuracy_at_best": 0.9988450655425304,
+        "val_roc_auc_at_best": 0.9999934802540916,
+        "threshold": 0.5,
+        "device": "cuda"
+      },
+      "gradio_version": "5.50.0"
+    },
+    "scope": "36 selected validation examples; not an independent test set",
+    "per_image_results_supplied": false,
+    "limitation": "Summary reports 100% accuracy and endpoint agreement; sample identities and individual outputs cannot be verified from this export."
+  },
+  "held_out_evaluation": {
+    "status": "not_completed_according_to_supplied_self_test_summary",
+    "primary_test": null,
+    "cross_generator_test": null,
+    "accuracy_drop_percentage_points": null,
+    "f1_drop": null
+  },
+  "unavailable_evidence": [
+    "data_audit/manifest.csv",
+    "data_audit/audit.json",
+    "per-image validation predictions",
+    "primary and cross-generator prediction CSVs",
+    "confusion matrix counts",
+    "ROC/PR curve points",
+    "calibration metrics",
+    "run environment/device log",
+    "last.pt resume state",
+    "Gradio per-image self-test CSV",
+    "other models' matching-split results"
+  ],
+  "integrity_checks": {
+    "completion_matches_history_length": true,
+    "completion_status_trained": true,
+    "completion_time_matches_history": true,
+    "checkpoint_time_matches_completion": true,
+    "best_epoch_matches_minimum_validation_loss": true,
+    "runtime_code_hash_matches_configuration": true,
+    "model_config_matches_checkpoint": true,
+    "run_identifiers_match": true,
+    "label_mapping_matches": true,
+    "threshold_matches": true,
+    "parameter_counts_match": true,
+    "world_sizes_match": true,
+    "demo_best_accuracy_matches_history": true,
+    "demo_best_auc_matches_history": true
+  },
+  "source_files": [
+    {
+      "path": "runs/vit_wish_s42_ddp2_v1/training_history.csv",
+      "sha256": "ccc8834f521c9965fdccd6ca0c216b89edd3174d2b0d69ba6c6277d27ffd8f85"
+    },
+    {
+      "path": "runs/vit_wish_s42_ddp2_v1/training_complete.json",
+      "sha256": "cb4f8f5ebe8be0645e98b20eff046a3409b8f6ba8afc0d97fe453d0e2936f15f"
+    },
+    {
+      "path": "runs/vit_wish_s42_ddp2_v1/run_config_used.json",
+      "sha256": "0f30814f37e829b79b8c266b02c2e15715389c9de31e46eb50fe450212cf2841"
+    },
+    {
+      "path": "runs/vit_wish_s42_ddp2_v1/checkpoints/best_model.pt",
+      "sha256": "be78ec4969aaf73dc82918f6c9aa794e6d196287920d1957c511106f458a452c"
+    },
+    {
+      "path": "gradio_app/self_test_summary.json",
+      "sha256": "22c1deb4c9eea9fd349f66a38a31174895fae81fd2088b312ee27d22408583b8"
+    },
+    {
+      "path": "code/models/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "code/models/vit/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "code/models/vit/audit_progress.py",
+      "sha256": "d7e96ed49bacfbe8877a2d11a034accd2b9fcac656ad745abf4d0edda6d69438"
+    },
+    {
+      "path": "code/models/vit/distributed.py",
+      "sha256": "fc5971cefe310d19a5dc85192c754aec152c9d01b736f900beba2dca0bcedb85"
+    },
+    {
+      "path": "code/models/vit/evaluate_crossgen.py",
+      "sha256": "3cd27428349ce0226e1890fc85a4cec8e3f44a118160e0fde8586bbf07a0cd2c"
+    },
+    {
+      "path": "code/models/vit/launch_train.py",
+      "sha256": "b9a491ad65ed45508212454a7de524d893b6922c7dff67b286580386200c8d49"
+    },
+    {
+      "path": "code/models/vit/manifest.py",
+      "sha256": "3950cb7fa183ec9bec355cbfbe0070ab52b047aedd34fabbc9396c07eda18bf5"
+    },
+    {
+      "path": "code/models/vit/model.py",
+      "sha256": "ab922387bb16171908f0806f8ca0a488a4609c886f1ca290b5928997ffe2dcdf"
+    },
+    {
+      "path": "code/models/vit/nccl_check.py",
+      "sha256": "8f633f96e4a8f6e806688b20c8a394031939f47675cdb85178ead734b61fe9a1"
+    },
+    {
+      "path": "code/models/vit/presize_cache.py",
+      "sha256": "ed36780d2fb1ba300230c56c0ffcd2a407b6ea86463ef896e96ca12b4d96f3a0"
+    },
+    {
+      "path": "code/models/vit/quality_report.py",
+      "sha256": "de8e10a1549308571243521a2529cd120140573cb54ea216d249275ca16f86e7"
+    },
+    {
+      "path": "code/models/vit/reporting.py",
+      "sha256": "98878f39a10cba55666ee0e5d93f2edd4f75a155438a69e08be67534f82b498d"
+    },
+    {
+      "path": "code/models/vit/runtime.py",
+      "sha256": "66c418affbce2b3c82dd5d8ee0055bd6aaff563630563e63e89c05ac90ff77d1"
+    },
+    {
+      "path": "code/models/vit/train.py",
+      "sha256": "eaea413c2fc639d1b2a1c34f9a0e25d5dab702ba395435a47e879c157b372888"
+    },
+    {
+      "path": "code/models/vit/wish_standalone.py",
+      "sha256": "52b4c43e3ae402ea07e65a312fc158a2fa0b963b05e84b99d6641cf336d430b8"
+    }
+  ],
+  "history": [
+    {
+      "epoch": 1,
+      "phase": "finetune",
+      "train_loss": 0.138305229677535,
+      "val_loss": 0.003322627783186843,
+      "train_accuracy": 0.9384628710727234,
+      "val_accuracy": 0.9988450655425305,
+      "train_f1": 0.9325649196555699,
+      "val_f1": 0.9987254652052001,
+      "trainable_parameters": 85799425,
+      "lr": 9.984164687252574e-06,
+      "elapsed_seconds": 519.617897097,
+      "train_precision": 0.9263220279626088,
+      "train_recall": 0.9388925294888598,
+      "train_roc_auc": 0.9891246169337297,
+      "train_average_precision": 0.9872685569918206,
+      "train_balanced_accuracy": 0.9384996490708459,
+      "train_specificity": 0.9381067686528322,
+      "train_mcc": 0.876049052394515,
+      "val_precision": 0.9989801121876594,
+      "val_recall": 0.9984709480122325,
+      "val_roc_auc": 0.9999934802540916,
+      "val_average_precision": 0.9999921701148715,
+      "val_balanced_accuracy": 0.998813042915188,
+      "val_specificity": 0.9991551378181435,
+      "val_mcc": 0.9976697189774488,
+      "train_images_per_second": 164.31028426528206,
+      "train_data_wait_fraction": 0.0025095821470538546,
+      "world_size": 2
+    },
+    {
+      "epoch": 2,
+      "phase": "finetune",
+      "train_loss": 0.04804774289434907,
+      "val_loss": 0.004644927334547282,
+      "train_accuracy": 0.988170220137849,
+      "val_accuracy": 0.9989605589882774,
+      "train_f1": 0.986958419731529,
+      "val_f1": 0.9988533571155561,
+      "trainable_parameters": 85799425,
+      "lr": 1.9984164687252575e-05,
+      "elapsed_seconds": 1032.311744612,
+      "train_precision": 0.9862050163576881,
+      "train_recall": 0.9877129750982963,
+      "train_roc_auc": 0.9991159036661508,
+      "train_average_precision": 0.998892915000702,
+      "train_balanced_accuracy": 0.9881310807737063,
+      "train_specificity": 0.9885491864491163,
+      "train_mcc": 0.97613535489968,
+      "val_precision": 0.9987261146496815,
+      "val_recall": 0.9989806320081549,
+      "val_roc_auc": 0.9999755425424387,
+      "val_average_precision": 0.9999697493827843,
+      "val_balanced_accuracy": 0.9989622771404171,
+      "val_specificity": 0.9989439222726793,
+      "val_mcc": 0.9979028138946532,
+      "train_images_per_second": 166.6177800805454,
+      "train_data_wait_fraction": 0.0028544550008598748,
+      "world_size": 2
+    },
+    {
+      "epoch": 3,
+      "phase": "finetune",
+      "train_loss": 0.05318425740474825,
+      "val_loss": 0.004476941274460283,
+      "train_accuracy": 0.9865615680645441,
+      "val_accuracy": 0.9982098515909222,
+      "train_f1": 0.9851861956076934,
+      "val_f1": 0.998024848677923,
+      "trainable_parameters": 85799425,
+      "lr": 2.997624703087886e-05,
+      "elapsed_seconds": 1547.2231919649998,
+      "train_precision": 0.9843537044104018,
+      "train_recall": 0.9860200961118393,
+      "train_roc_auc": 0.9988589615200981,
+      "train_average_precision": 0.9986537972273524,
+      "train_balanced_accuracy": 0.9865152190260706,
+      "train_specificity": 0.9870103419403019,
+      "train_mcc": 0.9728906244243685,
+      "val_precision": 0.9980884414425896,
+      "val_recall": 0.9979612640163099,
+      "val_roc_auc": 0.999990021895581,
+      "val_average_precision": 0.9999880001359842,
+      "val_balanced_accuracy": 0.9981885737126643,
+      "val_specificity": 0.9984158834090189,
+      "val_mcc": 0.9963880214073574,
+      "train_images_per_second": 165.8396148285967,
+      "train_data_wait_fraction": 0.0028217306157627105,
+      "world_size": 2
+    },
+    {
+      "epoch": 4,
+      "phase": "finetune",
+      "train_loss": 0.04577749706194128,
+      "val_loss": 0.007914230454856083,
+      "train_accuracy": 0.9884795763057924,
+      "val_accuracy": 0.9980366114223018,
+      "train_f1": 0.9872985988894801,
+      "val_f1": 0.9978316326530612,
+      "trainable_parameters": 85799425,
+      "lr": 2.8891967977478668e-05,
+      "elapsed_seconds": 2062.0696144129997,
+      "train_precision": 0.9866121336059986,
+      "train_recall": 0.9879860200961118,
+      "train_roc_auc": 0.9990366011144136,
+      "train_average_precision": 0.9987498442362646,
+      "train_balanced_accuracy": 0.9884373287699098,
+      "train_specificity": 0.9888886374437077,
+      "train_mcc": 0.9767590215168654,
+      "val_precision": 0.9988508682328907,
+      "val_recall": 0.9968144750254841,
+      "val_roc_auc": 0.9999879092018603,
+      "val_average_precision": 0.9999854578203013,
+      "val_balanced_accuracy": 0.9979320025354477,
+      "val_specificity": 0.9990495300454113,
+      "val_mcc": 0.9960395508581784,
+      "train_images_per_second": 165.80422967174803,
+      "train_data_wait_fraction": 0.0025995414671294995,
+      "world_size": 2
+    },
+    {
+      "epoch": 5,
+      "phase": "finetune",
+      "train_loss": 0.03573319368657703,
+      "val_loss": 0.014584003187276866,
+      "train_accuracy": 0.9910534196230805,
+      "val_accuracy": 0.9967661835190853,
+      "train_f1": 0.9901260532892671,
+      "val_f1": 0.9964290269098329,
+      "trainable_parameters": 85799425,
+      "lr": 2.7781296736166092e-05,
+      "elapsed_seconds": 2575.5779971879997,
+      "train_precision": 0.9904642203338889,
+      "train_recall": 0.9897881170816951,
+      "train_roc_auc": 0.9994726386334026,
+      "train_average_precision": 0.9993575952607945,
+      "train_balanced_accuracy": 0.9909451119704341,
+      "train_specificity": 0.9921021068591731,
+      "train_mcc": 0.9819477908574058,
+      "val_precision": 0.9973193770742915,
+      "val_recall": 0.9955402650356778,
+      "val_roc_auc": 0.9999452919979558,
+      "val_average_precision": 0.9999327873514626,
+      "val_balanced_accuracy": 0.9966612509041521,
+      "val_specificity": 0.9977822367726265,
+      "val_mcc": 0.9934755200838571,
+      "train_images_per_second": 166.3331959012532,
+      "train_data_wait_fraction": 0.0027989200241955304,
+      "world_size": 2
+    },
+    {
+      "epoch": 6,
+      "phase": "finetune",
+      "train_loss": 0.028595239756131107,
+      "val_loss": 0.016080343234479023,
+      "train_accuracy": 0.9930827960847883,
+      "val_accuracy": 0.9964197031818445,
+      "train_f1": 0.9923666206934222,
+      "val_f1": 0.9960347915067792,
+      "trainable_parameters": 85799425,
+      "lr": 2.6670625494853524e-05,
+      "elapsed_seconds": 3088.0132857519993,
+      "train_precision": 0.9925970442811484,
+      "train_recall": 0.9921363040629095,
+      "train_roc_auc": 0.9996571792733586,
+      "train_average_precision": 0.9995711884539001,
+      "train_balanced_accuracy": 0.993001778046979,
+      "train_specificity": 0.9938672520310484,
+      "train_mcc": 0.9860428230449878,
+      "val_precision": 0.9998715973292245,
+      "val_recall": 0.9922273190621814,
+      "val_roc_auc": 0.999986718288521,
+      "val_average_precision": 0.9999840465794869,
+      "val_balanced_accuracy": 0.9960608556447247,
+      "val_specificity": 0.999894392227268,
+      "val_mcc": 0.9927956698076438,
+      "train_images_per_second": 166.7113781736425,
+      "train_data_wait_fraction": 0.0030096312905475175,
+      "world_size": 2
+    },
+    {
+      "epoch": 7,
+      "phase": "finetune",
+      "train_loss": 0.023547514051464137,
+      "val_loss": 0.007883834083401228,
+      "train_accuracy": 0.9944687117171742,
+      "val_accuracy": 0.9980366114223018,
+      "train_f1": 0.9939010246824304,
+      "val_f1": 0.9978308026030369,
+      "trainable_parameters": 85799425,
+      "lr": 2.556039412333949e-05,
+      "elapsed_seconds": 3598.02585191,
+      "train_precision": 0.9933182425614313,
+      "train_recall": 0.9944844910441241,
+      "train_roc_auc": 0.9997840028634697,
+      "train_average_precision": 0.999738483978123,
+      "train_balanced_accuracy": 0.9944700623995655,
+      "train_specificity": 0.9944556337550069,
+      "train_mcc": 0.9888413157440272,
+      "val_precision": 0.9992333248147202,
+      "val_recall": 0.9964322120285423,
+      "val_roc_auc": 0.9999852784271955,
+      "val_average_precision": 0.9999824269741902,
+      "val_balanced_accuracy": 0.9978992826960749,
+      "val_specificity": 0.9993663533636076,
+      "val_mcc": 0.9960408339762756,
+      "train_images_per_second": 167.4579120928277,
+      "train_data_wait_fraction": 0.0027031187524756426,
+      "world_size": 2
+    }
+  ],
+  "conclusion": "Strong recorded within-dataset validation discrimination. Best checkpoint is epoch 1 after a seven-epoch run. Unseen-generator robustness and comparative superiority remain unestablished.",
+  "training_configuration": {
+    "model_name": "vit_b16",
+    "module": "models.vit.model",
+    "run_name": "vit_wish_s42_ddp2_v1",
+    "seed": 42,
+    "device": "cuda",
+    "runtime_sha256": "186a54138fb432ec11601d2d7cd82b65bbd2fa52e180bb35983f63d016fae0d4",
+    "distributed": {
+      "world_size": 2
+    },
+    "data": {
+      "root": "/kaggle/input/datasets/wish096/realvsfake-81k-by-wish/RealVsFake/RealVsFake",
+      "manifest": "/kaggle/working/wish_vit_ddp_v4/data_audit/manifest.csv",
+      "near_duplicate_review": null,
+      "batch_size": 16,
+      "num_workers": 2
+    },
+    "model": {
+      "backbone": "vit_base_patch16_224.augreg_in21k_ft_in1k",
+      "pretrained": true,
+      "num_classes": 1,
+      "dropout": 0.1,
+      "use_frequency_hybrid": false
+    },
+    "train": {
+      "epochs": 30,
+      "early_stopping_patience": 6,
+      "optimizer": "adamw",
+      "lr": 3e-05,
+      "weight_decay": 0.01,
+      "warmup_steps_pct": 0.1,
+      "effective_batch_size": 32,
+      "grad_clip_norm": 1.0,
+      "mixed_precision": true,
+      "progress_every": 100
+    },
+    "output": {
+      "results_dir": "/kaggle/working/wish_vit_ddp_v4/runs"
+    }
+  }
+}

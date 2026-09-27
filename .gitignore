@@ -42,6 +42,8 @@ results/**/*.yaml
 checkpoints/
 trained_models/
 !artifacts/vit_wish_s42_ddp2_v1/best_model.pt
+!post-training/training-export/runs/vit_wish_s42_ddp2_v1/checkpoints/
+!post-training/training-export/runs/vit_wish_s42_ddp2_v1/checkpoints/best_model.pt
 
 # ---------- Python bytecode / caches -------------------------
 __pycache__/

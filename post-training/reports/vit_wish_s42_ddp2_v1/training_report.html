@@ -1,0 +1,277 @@
+<!doctype html><html lang="en"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>ViT Training Evidence Report</title>
+<style>body{font:16px/1.65 system-ui,sans-serif;color:#20252a;background:#fff;max-width:1050px;margin:40px auto;padding:0 24px}
+h1{font-size:30px}h2{font-size:23px;border-top:1px solid #d8dfdd;padding-top:22px;margin-top:38px;color:#145b4b}
+table{border-collapse:collapse;width:100%;display:block;overflow-x:auto;font-size:14px}th,td{padding:9px 12px;border-bottom:1px solid #d8dfdd;text-align:left}th{background:#edf5f1}
+code{font-size:13px;overflow-wrap:anywhere}img{max-width:100%;height:auto}p{overflow-wrap:anywhere}
+@media print{body{margin:0;max-width:none;font-size:11px}h2{break-after:avoid}img,tr{break-inside:avoid}}</style><body><h1>ViT-B/16 Training Evidence Report</h1>
+<p>Run: <code>vit_wish_s42_ddp2_v1</code><br />
+Scope: recorded training, validation and Gradio validation-subset checks.<br />
+Format: model-card-style experiment report. No proprietary OpenCodeGen format is claimed.</p>
+<h2>1. Executive Summary</h2>
+<p>The exported run completed <strong>7 epochs</strong> of a maximum 30. The checkpoint selected by minimum validation loss is <strong>epoch 1</strong>, not epoch 7. Its recorded validation accuracy is <strong>99.8845%</strong>, fake-class F1 is <strong>0.998725</strong>, and ROC-AUC is <strong>0.99999348</strong>. The epoch 1 checkpoint and this report refer to the same SHA-256-verified weight file already stored in the project repository.</p>
+<p>Training plus validation calls account for <strong>3598.03 seconds</strong>, approximately <strong>59 minutes 58 seconds</strong>. Six consecutive later epochs did not improve validation loss. Together with the supplied stopping code and patience 6, this explains the stop at epoch 7. The completion file records status <code>trained</code> but does not itself name a stop reason; early stopping is inferred from the corroborating evidence.</p>
+<p>The Gradio summary reports correct labels for <strong>36/36 validation examples</strong>, plus agreement between direct inference and both endpoints. <strong>No final primary-test or cross-generator results are included.</strong> Strong validation performance is not proof of unseen-generator robustness or superiority over the team's CNNs.</p>
+<h2>2. Model and Intended Use</h2>
+<p>Plain ViT-B/16 with 16x16 patches, a single-logit binary head, dropout 0.1 and <strong>85,799,425 trainable parameters</strong>. The named timm checkpoint is <code>vit_base_patch16_224.augreg_in21k_ft_in1k</code>: ImageNet-21k pretraining followed by ImageNet-1k fine-tuning before this Wish run. The optional FFT branch is disabled.</p>
+<p>Inference uses RGB input, square 224x224 bicubic resizing, and mean/std <strong>[0.5, 0.5, 0.5]</strong>. Real is 0; fake is 1. A fake probability of at least 0.5 predicts fake. These are model scores, not calibrated assurances of authenticity. Intended inputs are face crops resembling the training data; arbitrary photos, face swaps and other generators are outside the demonstrated evidence.</p>
+<h2>3. Data and Provenance</h2>
+<p>Dataset: <code>wish096/realvsfake-81k-by-wish</code>. The supplied code defines train/validation/primary testing using FFHQ and CelebA real faces plus StyleGAN fakes. Stable Diffusion and separate real controls are reserved for cross-generator testing; AiGenImage is excluded. These are <strong>code-level protocol statements</strong>, not independently verified split membership in this report.</p>
+<p>The export does not contain the manifest, audit, image inventory or dataset images. Exact split sizes, source proportions, duplicate exclusions, identity overlap and leakage status therefore cannot be independently verified. A recorded checksum identifies an expected manifest; it does not substitute for inspecting that manifest.</p>
+<p>Manifest SHA-256 recorded in checkpoint:<br />
+<code>2c0a6ff549eab6568ff35552d08c47a7a00eb0bd8e2bb82e1775a946056f1492</code></p>
+<p>Dataset snapshot recorded in checkpoint:<br />
+<code>content-sha256:89612e195edc71ace7cc953d87e9184b4e31609dd24915d2625ab548b6fced9e</code></p>
+<h2>4. Training Protocol</h2>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Recorded value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Seed</td>
+<td>42</td>
+</tr>
+<tr>
+<td>Optimizer / loss</td>
+<td>AdamW / BCEWithLogitsLoss</td>
+</tr>
+<tr>
+<td>Target learning rate / weight decay</td>
+<td>0.00003 / 0.01</td>
+</tr>
+<tr>
+<td>Schedule</td>
+<td>10% linear warmup, then linear decay</td>
+</tr>
+<tr>
+<td>Gradient clipping</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>Distributed workers</td>
+<td>2 CUDA ranks</td>
+</tr>
+<tr>
+<td>Per-GPU microbatch / effective batch</td>
+<td>16 / 32</td>
+</tr>
+<tr>
+<td>Accumulation steps</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Mixed precision</td>
+<td>Enabled</td>
+</tr>
+<tr>
+<td>Maximum epochs / patience</td>
+<td>30 / 6</td>
+</tr>
+<tr>
+<td>Selection criterion</td>
+<td>Lowest validation loss</td>
+</tr>
+</tbody>
+</table>
+<p>The notebook is intended for T4 x2, but the export lacks an environment/device log, so the exact GPU SKU and dependency versions used during training are not independently verified. The supplied training implementation uses a padding DistributedSampler for training and removes repeated sample IDs from reported metrics. Depending on sample-count divisibility, padding can still repeat training examples in gradient updates. The absent manifest prevents checking whether this occurred. Validation uses disjoint, unpadded shards.</p>
+<h2>5. Recorded Results</h2>
+<p>All metrics below are <strong>validation</strong> metrics. Classification scores use a 0-1 scale, MCC uses -1 to 1, and BCE loss is nonnegative without an upper bound. They are read from the epoch history, not recomputed from missing per-image predictions. Precision, recall and F1 treat fake as the positive class. AP means average precision, not trapezoidal PR-AUC.</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th style="text-align:right">Selected checkpoint: epoch 1</th>
+<th style="text-align:right">Last recorded epoch: 7</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BCE loss</td>
+<td style="text-align:right">0.00332263</td>
+<td style="text-align:right">0.00788383</td>
+</tr>
+<tr>
+<td>Accuracy</td>
+<td style="text-align:right">0.99884507</td>
+<td style="text-align:right">0.99803661</td>
+</tr>
+<tr>
+<td>Fake precision</td>
+<td style="text-align:right">0.99898011</td>
+<td style="text-align:right">0.99923332</td>
+</tr>
+<tr>
+<td>Fake recall</td>
+<td style="text-align:right">0.99847095</td>
+<td style="text-align:right">0.99643221</td>
+</tr>
+<tr>
+<td>Fake F1</td>
+<td style="text-align:right">0.99872547</td>
+<td style="text-align:right">0.99783080</td>
+</tr>
+<tr>
+<td>ROC-AUC</td>
+<td style="text-align:right">0.99999348</td>
+<td style="text-align:right">0.99998528</td>
+</tr>
+<tr>
+<td>Average precision</td>
+<td style="text-align:right">0.99999217</td>
+<td style="text-align:right">0.99998243</td>
+</tr>
+<tr>
+<td>Balanced accuracy</td>
+<td style="text-align:right">0.99881304</td>
+<td style="text-align:right">0.99789928</td>
+</tr>
+<tr>
+<td>Real specificity</td>
+<td style="text-align:right">0.99915514</td>
+<td style="text-align:right">0.99936635</td>
+</tr>
+<tr>
+<td>MCC</td>
+<td style="text-align:right">0.99766972</td>
+<td style="text-align:right">0.99604083</td>
+</tr>
+</tbody>
+</table>
+<p>Epoch 2 has the highest recorded validation accuracy, but its validation loss is worse than epoch 1. It is therefore <strong>not</strong> the checkpoint selected by the declared protocol. Changing selection criteria after observing results would describe a different experiment.</p>
+<table>
+<thead>
+<tr>
+<th>Epoch</th>
+<th style="text-align:right">Training BCE</th>
+<th style="text-align:right">Validation BCE</th>
+<th style="text-align:right">Validation accuracy</th>
+<th style="text-align:right">Validation F1</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td style="text-align:right">0.138305</td>
+<td style="text-align:right">0.003323</td>
+<td style="text-align:right">99.8845%</td>
+<td style="text-align:right">0.998725</td>
+</tr>
+<tr>
+<td>2</td>
+<td style="text-align:right">0.048048</td>
+<td style="text-align:right">0.004645</td>
+<td style="text-align:right">99.8961%</td>
+<td style="text-align:right">0.998853</td>
+</tr>
+<tr>
+<td>3</td>
+<td style="text-align:right">0.053184</td>
+<td style="text-align:right">0.004477</td>
+<td style="text-align:right">99.8210%</td>
+<td style="text-align:right">0.998025</td>
+</tr>
+<tr>
+<td>4</td>
+<td style="text-align:right">0.045777</td>
+<td style="text-align:right">0.007914</td>
+<td style="text-align:right">99.8037%</td>
+<td style="text-align:right">0.997832</td>
+</tr>
+<tr>
+<td>5</td>
+<td style="text-align:right">0.035733</td>
+<td style="text-align:right">0.014584</td>
+<td style="text-align:right">99.6766%</td>
+<td style="text-align:right">0.996429</td>
+</tr>
+<tr>
+<td>6</td>
+<td style="text-align:right">0.028595</td>
+<td style="text-align:right">0.016080</td>
+<td style="text-align:right">99.6420%</td>
+<td style="text-align:right">0.996035</td>
+</tr>
+<tr>
+<td>7</td>
+<td style="text-align:right">0.023548</td>
+<td style="text-align:right">0.007884</td>
+<td style="text-align:right">99.8037%</td>
+<td style="text-align:right">0.997831</td>
+</tr>
+</tbody>
+</table>
+<p><img src="figures/training_validation.png" alt="Training and validation history" /></p>
+<p>Training metrics summarize augmented batches while model weights are changing; they are not a fixed-checkpoint evaluation of the entire training set. Metric axes in this figure are auto-scaled and do not all start at zero.</p>
+<h2>6. Convergence and Checkpoint Selection</h2>
+<p>Training loss falls from 0.138305 to 0.023548, while validation loss is best at the first epoch and remains worse in all six later epochs. The final validation loss is approximately 2.37 times the best value. This supports retaining the early checkpoint rather than assuming the latest weights are better.</p>
+<p>The target learning rate is approached around epoch 3 during warmup. Subsequent worsening validation loss may reflect increased confidence on mistakes, optimization sensitivity or overfitting to the training domain. Aggregate curves cannot establish which explanation is correct, and they do not prove leakage. Strong pretraining and training-only augmentation/dropout can also help explain validation performance exceeding the online training metrics.</p>
+<p><img src="figures/selection_and_schedule.png" alt="Selection and schedule" /></p>
+<p>Further tuning, if justified, must use validation only and retain a fresh final test protocol. Do not extend training merely to reach 30 epochs or select the most flattering metric after the fact.</p>
+<h2>7. Efficiency</h2>
+<p>Recorded train/validation time: <strong>3598.03 seconds</strong>. Mean recorded epoch duration: <strong>8.57 minutes</strong>. Mean reported training throughput: <strong>166.15 images/second</strong> across the run's distributed training process.</p>
+<p><img src="figures/efficiency.png" alt="Recorded efficiency" /></p>
+<p>These timings exclude dataset audit/cache preparation, setup and most output writing. The trainer's throughput is not a controlled synchronized inference benchmark. There is no matched single-GPU baseline, so neither a twofold speedup nor a total end-to-end runtime improvement can be claimed. Inference latency and peak GPU memory are unreported.</p>
+<h2>8. Gradio Integration Evidence</h2>
+<p>The supplied summary reports <strong>24 real and 12 fake validation images</strong>, all predicted correctly. Sources are CelebA, FFHQ and StyleGAN. Both single-image and batch endpoints reportedly match direct model inference. The summary records Gradio 5.50.0 for this self-test.</p>
+<p>This is a small selected subset already involved in model selection. <strong>100% on these 36 examples is not final detector accuracy.</strong> The export omits the per-image self-test CSV and example identities, so the summary cannot be independently regenerated. No Stable Diffusion examples were part of this reported self-test. No confusion matrix or uncertainty interval for the full validation/test population is invented from this summary.</p>
+<h2>9. Evaluation Gaps and Limitations</h2>
+<table>
+<thead>
+<tr>
+<th>Evidence</th>
+<th>Availability</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Training history and best weights</td>
+<td>Supplied and internally reconciled</td>
+</tr>
+<tr>
+<td>Primary held-out test</td>
+<td>Not completed according to supplied self-test summary; no results supplied</td>
+</tr>
+<tr>
+<td>Cross-generator test</td>
+<td>Not completed according to supplied self-test summary; no results supplied</td>
+</tr>
+<tr>
+<td>Accuracy/F1 generalization drops</td>
+<td>Not calculable</td>
+</tr>
+<tr>
+<td>Per-image probabilities and confusion counts</td>
+<td>Not supplied</td>
+</tr>
+<tr>
+<td>ROC/PR curve points and calibration</td>
+<td>Not supplied; cannot reconstruct from scalar AUC/AP</td>
+</tr>
+<tr>
+<td>Shared-split four-model comparison</td>
+<td>Not supplied</td>
+</tr>
+<tr>
+<td>Repeated-seed uncertainty</td>
+<td>One seed only</td>
+</tr>
+<tr>
+<td>Dataset/identity leakage verification</td>
+<td>Manifest, audit and identity evidence absent</td>
+</tr>
+<tr>
+<td>Exact hardware and training package versions</td>
+<td>Environment log absent</td>
+</tr>
+</tbody>
+</table>
+<p>Source/compression shortcuts, unequal pretraining, unknown identity overlap and changes in image generator can all limit external validity. The defensible conclusion is excellent <strong>recorded within-dataset validation</strong> performance, not a universal deepfake detector.</p>
+<h2>10. Reproducibility and Next Evidence</h2>
+<p>The checkpoint SHA-256 is <code>be78ec4969aaf73dc82918f6c9aa794e6d196287920d1957c511106f458a452c</code>. The supplied Python runtime reproduces configuration hash <code>186a54138fb432ec11601d2d7cd82b65bbd2fa52e180bb35983f63d016fae0d4</code>. The JSON includes source-file hashes, the complete seven-epoch history, metric definitions and consistency checks. No training, test inference or checkpoint modification was performed to create this report.</p>
+<p>Retrieve the exact manifest/audit and complete run environment. Freeze the selected checkpoint and threshold, then perform the agreed primary and cross-generator evaluations without tuning on either test. Export per-image predictions, confusion matrices, ROC/PR curves, calibration diagnostics, false positives/negatives and synchronized inference timing. Compare A/B models only after verifying compatible training and held-out assignments. Keep missing results explicitly unavailable until these measurements exist.</p>
+<p>Evidence inputs: <code>training_history.csv</code>, <code>training_complete.json</code>, <code>run_config_used.json</code>, <code>best_model.pt</code>, <code>gradio_app/self_test_summary.json</code>, and supplied runtime source. Original lightweight inputs are preserved in <code>evidence/</code>; the large checkpoint is identified by its hash rather than duplicated.</p>
+</body></html>

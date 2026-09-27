@@ -1,0 +1,34 @@
+{
+  "images": 36,
+  "labelled_images": 36,
+  "real_images": 24,
+  "fake_images": 12,
+  "accuracy_on_real_images": 1.0,
+  "accuracy_on_fake_images": 1.0,
+  "accuracy": 1.0,
+  "accuracy_by_source": {
+    "CelebA": 1.0,
+    "FFHQ": 1.0,
+    "StyleGAN": 1.0
+  },
+  "predicted_fake": 12,
+  "predicted_real": 24,
+  "single_image_endpoint_matches_model": true,
+  "batch_endpoint_matches_model": true,
+  "splits_used": [
+    "val"
+  ],
+  "sealed_evaluation_complete": false,
+  "run": {
+    "run_name": "vit_wish_s42_ddp2_v1",
+    "best_epoch": 1,
+    "epochs_recorded": 7,
+    "planned_epochs": 30,
+    "training_complete": true,
+    "val_accuracy_at_best": 0.9988450655425304,
+    "val_roc_auc_at_best": 0.9999934802540916,
+    "threshold": 0.5,
+    "device": "cuda"
+  },
+  "gradio_version": "5.50.0"
+}
